@@ -1,0 +1,33 @@
+name: Dart CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    container:
+      image:  google/dart:latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Dart version
+        run: dart --version
+      - name: Install dependencies
+        run: dart pub get
+      - name: dart format
+        run: dart format -o none --set-exit-if-changed .
+      - name: dart analyze
+        run: dart analyze --fatal-infos --fatal-warnings .
+      - name: dependency_validator
+        run: dart run dependency_validator
+      - name: Run tests
+        run: dart test
+      - name: dart pub publish --dry-run
+        run: dart pub publish --dry-run
+

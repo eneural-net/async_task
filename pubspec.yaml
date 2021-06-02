@@ -8,7 +8,6 @@ environment:
 
 dependencies:
   collection: ^1.15.0
-  intl: ^0.17.0
 
 dev_dependencies:
   pedantic: ^1.11.0

@@ -11,22 +11,21 @@
 [![Code size](https://img.shields.io/github/languages/code-size/eneural-net/async_task?logo=github&logoColor=white)](https://github.com/eneural-net/async_task)
 [![License](https://img.shields.io/github/license/eneural-net/async_task?logo=open-source-initiative&logoColor=green)](https://github.com/eneural-net/async_task/blob/master/LICENSE)
 
-Asynchronous tasks and parallel executors, supporting all Dart platforms
-(JS/Web, Flutter, VM/Native) through transparent internal implementations with [dart:isolate][dart_isolate] or only
-[dart:async][dart_async], easily bringing concepts similar to Thread Pools to Dart, without having to deal
-with [Isolate] and port/channel complexity.
+This package brings asynchronous tasks and parallel executors (similar to classic thread pools) for all Dart platforms
+(JS/Web, Flutter, VM/Native) through transparent internal implementations, based on [dart:isolate][dart_isolate] or
+only [dart:async][dart_async], without having to deal with the [Isolate] complexity.
 
 [dart_async]: https://api.dart.dev/stable/2.13.1/dart-async/dart-async-library.html
 [dart_isolate]: https://api.dart.dev/stable/2.13.1/dart-isolate/dart-isolate-library.html
 [Isolate]: https://api.dart.dev/stable/2.12.4/dart-isolate/Isolate-class.html
 
-### Motivation
+## Motivation
 
 Dart parallelism is based on asynchronous, non-blocking and thread-safe code. This creates a language that facilitates
 the creation of safe concurrency code, but all running in the same thread, using only 1 thread/core of a device.
 
 If you want to use more than 1 thread/core of a device, Dart VM/Native has [Isolate], but the paradigm is not easy to
-use like classical Thread Pools, or environments that shares all the memory/objects between threads.
+use like classical Thread Pools, or like environments that shares all the memory/objects between threads.
 
 This package was created to facilitate the creation and execution of multiple tasks asynchronously in all Dart
 Platforms, avoiding platform specific codes by the developer.

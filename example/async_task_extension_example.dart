@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
@@ -42,6 +43,9 @@ void main() async {
     var prime = task.result;
     print('$n\t-> $prime \t $task');
   }
+
+  // Close the executor.
+  await asyncExecutor.close();
 }
 
 // This top-level function returns the tasks types that will be registered
@@ -58,7 +62,7 @@ class PrimeChecker extends AsyncTask<int, bool> {
 
   // Instantiates a `PrimeChecker` task with `parameters`.
   @override
-  AsyncTask<int, bool> instantiate(int parameters) {
+  AsyncTask<int, bool> instantiate(int parameters, [SharedData? sharedData]) {
     return PrimeChecker(parameters);
   }
 
@@ -78,7 +82,9 @@ class PrimeChecker extends AsyncTask<int, bool> {
   bool isPrime(int n) {
     if (n < 2) return false;
 
-    var limit = n ~/ 2;
+    // It's sufficient to search for prime factors in the range [1,sqrt(N)]:
+    var limit = (sqrt(n) + 1).toInt();
+
     for (var p = 2; p < limit; ++p) {
       if (n % p == 0) return false;
     }

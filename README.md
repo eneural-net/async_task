@@ -126,6 +126,79 @@ Output:
 16769023 -> true 	 PrimeChecker(16769023)[finished]{ result: true ; executionTime: 35 ms }
 ```
 
+## SharedData
+
+The class `SharedData` facilitates and optimizes data shared between tasks.
+The main advantage of data encapsulated with `SharedData` is to avoid multiple
+messages, with the same data, between threads/isolates, avoiding concurrency
+performance issues and multiple duplicated objects in memory (a GC bottleneck).
+
+Here's an example of a task using `SharedData`:
+
+```dart
+// A task that checks if a number is prime:
+class PrimeChecker extends AsyncTask<int, bool> {
+  // The number to check if is prime.
+  final int n;
+
+  // A list of known primes, shared between tasks.
+  final SharedData<List<int>, List<int>> knownPrimes;
+
+  PrimeChecker(this.n, this.knownPrimes);
+
+  // Instantiates a `PrimeChecker` task with `parameters`.
+  @override
+  AsyncTask<int, bool> instantiate(int parameters, [SharedData? sharedData]) {
+    return PrimeChecker(
+        parameters, sharedData as SharedData<List<int>, List<int>>);
+  }
+
+  // The `SharedData` of this task.
+  @override
+  SharedData<List<int>, List<int>> sharedData() => knownPrimes;
+
+  // Loads the `SharedData` from `serial`.
+  @override
+  SharedData<List<int>, List<int>> loadSharedData(dynamic serial) =>
+      SharedData<List<int>, List<int>>(serial);
+
+  // The parameters of this task:
+  @override
+  int parameters() {
+    return n;
+  }
+
+  // Runs the task code:
+  @override
+  FutureOr<bool> run() {
+    return isPrime(n);
+  }
+
+  // A simple prime check function:
+  bool isPrime(int n) {
+    if (n < 2) return false;
+
+    // The pre-computed primes, optimizing this checking algorithm:
+    if (knownPrimes.data.contains(n)) {
+      return true;
+    }
+    
+    // It's sufficient to search for prime factors in the range [1,sqrt(N)]:
+    var limit = (sqrt(n) + 1).toInt();
+
+    for (var p = 2; p < limit; ++p) {
+      if (n % p == 0) return false;
+    }
+
+    return true;
+  }
+}
+```
+
+The field `knownPrimes` above will be shared between tasks. In platforms with support
+for [dart:isolate][dart_isolate] `knownPrimes` will be sent through a [Isolate] port only once,
+avoiding multiple copies and unnecessary memory allocations.
+
 ## Source
 
 The official source code is [hosted @ GitHub][github_async_task]:

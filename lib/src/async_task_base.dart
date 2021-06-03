@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 
+import 'async_task_extension.dart';
 import 'async_task_generic.dart'
     if (dart.library.isolate) 'async_task_isolate.dart';
 
@@ -127,17 +129,36 @@ abstract class AsyncTask<P, R> {
     }
   }
 
+  /// Returns an optional [SharedData], that will be transferred to the executor
+  /// thread/isolate only once.
+  SharedData? sharedData() => null;
+
+  SharedData? loadSharedData(dynamic serial) => null;
+
   /// The parameters of this tasks.
   ///
   /// - NOTE: [P] should be a type that can be sent through an [Isolate] or
   ///   serialized as JSON.
   P parameters();
 
-  /// Creates an instance of this task type with [parameters].
-  AsyncTask<P, R> instantiate(P parameters);
+  /// Creates an instance of this task type with [parameters] and optional [sharedData].
+  AsyncTask<P, R> instantiate(P parameters, [SharedData? sharedData]);
+
+  /// Creates a copy of this task in its initial state (before execution state).
+  AsyncTask<P, R> copy() => instantiate(parameters(), sharedData());
 
   /// Computes/runs this task.
   FutureOr<R> run();
+
+  /// Resets this task to it's initial state, before any execution.
+  void reset() {
+    _finished = false;
+    _error = null;
+    submitTime = null;
+    _initTime = null;
+    _endTime = null;
+    _result = null;
+  }
 
   /// Returns a [Future] to wait for the task result.
   Future<R> waitResult() => _completer.future;
@@ -165,6 +186,353 @@ abstract class AsyncTask<P, R> {
     var s = '$o';
     if (s.length > limit) s = s.substring(0, limit) + '...';
     return s;
+  }
+}
+
+/// Interface for serializable data classes:
+abstract class SerializableData<D, S> {
+  /// Creates a new instance with [data].
+  SerializableData<D, S> instantiate(D data);
+
+  /// Creates a copy of this instance.
+  SerializableData<D, S> copy();
+
+  /// Deserializes [serial] to [D].
+  D deserializeData(S serial);
+
+  /// Deserializes [serial] to a instance of this type.
+  SerializableData<D, S> deserialize(S serial) =>
+      instantiate(deserializeData(serial));
+
+  /// Serializes this instance to [S].
+  S serialize();
+
+  /// Computes the signature of this instance.
+  String computeSignature();
+
+  /// Computes a generic signature for [SerializableData] and basic Dart types:
+  /// primitive values (null, num, bool, double, String),
+  /// lists and maps whose elements are any of these.
+  static String computeGenericSignature<D>(D data) {
+    if (data is SerializableData) {
+      return data.computeSignature();
+    } else if (data is int) {
+      return 'int>$data';
+    } else if (data is double) {
+      return 'double>$data';
+    } else if (data is num) {
+      return 'num>$data';
+    } else if (data is String) {
+      var h = data.hashCode;
+      return 'str>$h';
+    } else if (data is bool) {
+      return 'bool>$data';
+    } else if (data is Float32x4) {
+      return 'f32x4>$data';
+    } else if (data is Int32x4) {
+      return 'i32x4>$data';
+    } else if (data is Float64x2) {
+      return 'i64x2>$data';
+    } else if (data is List) {
+      var h = data.computeHashcode();
+      return 'list>$h';
+    } else if (data is Map) {
+      var h = data.computeHashcode();
+      return 'map>$h';
+    } else if (data is Set) {
+      var h = data.computeHashcode();
+      return 'map>$h';
+    } else if (data is Iterable) {
+      var h = data.computeHashcode();
+      return 'map>$h';
+    } else {
+      var h = data.hashCode;
+      return 'obj:$h';
+    }
+  }
+
+  /// Creates generic copy for [SerializableData] and basic Dart types:
+  /// primitive values (null, num, bool, double, String),
+  /// lists and maps whose elements are any of these.
+  static D copyGeneric<D>(D data) {
+    if (data is SerializableData) {
+      return data.copy() as D;
+    } else if (data is int) {
+      return data;
+    } else if (data is double) {
+      return data;
+    } else if (data is num) {
+      return data;
+    } else if (data is String) {
+      return data;
+    } else if (data is bool) {
+      return data;
+    } else if (data is Float32x4) {
+      return data;
+    } else if (data is Int32x4) {
+      return data;
+    } else if (data is Float64x2) {
+      return data;
+    } else if (data is MapEntry) {
+      return MapEntry(copyGeneric(data.key), copyGeneric(data.key)) as D;
+    } else if (data is Uint8List) {
+      return Uint8List.fromList(data) as D;
+    } else if (data is Uint16List) {
+      return Uint16List.fromList(data) as D;
+    } else if (data is Uint32List) {
+      return Uint32List.fromList(data) as D;
+    } else if (data is Int8List) {
+      return Int8List.fromList(data) as D;
+    } else if (data is Int16List) {
+      return Int8List.fromList(data) as D;
+    } else if (data is Int32List) {
+      return Int32List.fromList(data) as D;
+    } else if (data is Float32List) {
+      return Float32List.fromList(data) as D;
+    } else if (data is Float64List) {
+      return Float32List.fromList(data) as D;
+    } else if (data is Float32x4List) {
+      return Float32x4List.fromList(data) as D;
+    } else if (data is Int32x4List) {
+      return Int32x4List.fromList(data) as D;
+    } else if (data is Float64x2List) {
+      return Float64x2List.fromList(data) as D;
+    } else if (data is List) {
+      return data.deepCopy() as D;
+    } else if (data is Map) {
+      return data.deepCopy() as D;
+    } else if (data is Set) {
+      return data.deepCopy() as D;
+    } else if (data is Iterable) {
+      return data.deepCopy() as D;
+    } else {
+      throw StateError(
+          "Can't perform a generic copy on type: ${data.runtimeType}");
+    }
+  }
+
+  /// Generic serialization of [SerializableData] and basic Dart types:
+  /// primitive values (null, num, bool, double, String),
+  /// lists and maps whose elements are any of these.
+  static S serializeGeneric<S>(dynamic data) {
+    if (data is SerializableData) {
+      return data.serialize() as S;
+    } else if (data is int) {
+      return data as S;
+    } else if (data is double) {
+      return data as S;
+    } else if (data is num) {
+      return data as S;
+    } else if (data is String) {
+      return data as S;
+    } else if (data is bool) {
+      return data as S;
+    } else if (data is Float32x4) {
+      return data as S;
+    } else if (data is Int32x4) {
+      return data as S;
+    } else if (data is Float64x2) {
+      return data as S;
+    } else if (data is MapEntry) {
+      return MapEntry(serializeGeneric(data.key), serializeGeneric(data.key))
+          as S;
+    } else if (data is Uint8List) {
+      return data.serialize() as S;
+    } else if (data is Uint16List) {
+      return data.serialize() as S;
+    } else if (data is Uint32List) {
+      return data.serialize() as S;
+    } else if (data is Int8List) {
+      return data.serialize() as S;
+    } else if (data is Int16List) {
+      return data.serialize() as S;
+    } else if (data is Int32List) {
+      return data.serialize() as S;
+    } else if (data is Float32List) {
+      return data.serialize() as S;
+    } else if (data is Float64List) {
+      return data.serialize() as S;
+    } else if (data is Float32x4List) {
+      return data.serialize() as S;
+    } else if (data is Int32x4List) {
+      return data.serialize() as S;
+    } else if (data is Float64x2List) {
+      return data.serialize() as S;
+    } else if (data is List) {
+      return data.serialize() as S;
+    } else if (data is Map) {
+      return data.serialize() as S;
+    } else if (data is Set) {
+      return data.serialize() as S;
+    } else if (data is Iterable) {
+      return data.serialize() as S;
+    } else {
+      throw StateError(
+          "Can't perform a generic serialization on type: ${data.runtimeType}");
+    }
+  }
+
+  static Type _toType<T>() => T;
+
+  static final _typeListInt = _toType<List<int>>();
+  static final _typeListDouble = _toType<List<double>>();
+  static final _typeListNum = _toType<List<num>>();
+  static final _typeListBool = _toType<List<bool>>();
+  static final _typeListString = _toType<List<String>>();
+
+  static final _typeSetInt = _toType<Set<int>>();
+  static final _typeSetDouble = _toType<Set<double>>();
+  static final _typeSetNum = _toType<Set<num>>();
+  static final _typeSetBool = _toType<Set<bool>>();
+  static final _typeSetString = _toType<Set<String>>();
+
+  static final _typeIterableInt = _toType<Iterable<int>>();
+  static final _typeIterableDouble = _toType<Iterable<double>>();
+  static final _typeIterableNum = _toType<Iterable<num>>();
+  static final _typeIterableBool = _toType<Iterable<bool>>();
+  static final _typeIterableString = _toType<Iterable<String>>();
+
+  static bool _isBasicCollectionType(Type t) {
+    return (t == _typeListInt ||
+        t == _typeListDouble ||
+        t == _typeListNum ||
+        t == _typeListBool ||
+        t == _typeListString ||
+        t == _typeSetInt ||
+        t == _typeSetDouble ||
+        t == _typeSetNum ||
+        t == _typeSetBool ||
+        t == _typeSetString ||
+        t == _typeIterableInt ||
+        t == _typeIterableDouble ||
+        t == _typeIterableNum ||
+        t == _typeIterableBool ||
+        t == _typeIterableString);
+  }
+
+  static D deserializeGeneric<D>(dynamic serial) {
+    if (D == int) {
+      return serial as D;
+    } else if (D == double) {
+      return serial as D;
+    } else if (D == num) {
+      return serial as D;
+    } else if (D == String) {
+      return serial as D;
+    } else if (D == bool) {
+      return serial as D;
+    } else if (D == Float32x4) {
+      return serial as D;
+    } else if (D == Int32x4) {
+      return serial as D;
+    } else if (D == Float64x2) {
+      return serial as D;
+    } else if (D == MapEntry) {
+      var e = serial as MapEntry;
+      return MapEntry(deserializeGeneric(e.key), deserializeGeneric(e.key))
+          as D;
+    } else if (D == Uint8List) {
+      return Uint8List.fromList(serial as List<int>) as D;
+    } else if (D == Uint16List) {
+      return Uint16List.fromList(serial as List<int>) as D;
+    } else if (D == Uint32List) {
+      return Uint32List.fromList(serial as List<int>) as D;
+    } else if (D == Int8List) {
+      return Int8List.fromList(serial as List<int>) as D;
+    } else if (D == Int16List) {
+      return Int16List.fromList(serial as List<int>) as D;
+    } else if (D == Int32List) {
+      return Int32List.fromList(serial as List<int>) as D;
+    } else if (D == Float32List) {
+      return Float32List.fromList(serial as List<double>) as D;
+    } else if (D == Float64List) {
+      return Float64List.fromList(serial as List<double>) as D;
+    } else if (D == Float32x4List) {
+      var e = serial as List<double>;
+      return e.toFloat32x4List() as D;
+    } else if (D == Int32x4List) {
+      var e = serial as List<int>;
+      return e.toInt32x4List() as D;
+    } else if (D == Float64x2List) {
+      var e = serial as List<double>;
+      return e.toFloat64x2List() as D;
+    } else if (_isBasicCollectionType(D)) {
+      return serial as D;
+    } else if (D == List) {
+      var e = serial as List;
+      return e.map(deserializeGeneric).toList() as D;
+    } else if (D == Map) {
+      var e = serial as Map;
+      return e as D;
+    } else if (D == Set) {
+      var e = serial as Set;
+      return e.map(deserializeGeneric).toSet() as D;
+    } else if (D == Iterable) {
+      var e = serial as Iterable;
+      return e.map(deserializeGeneric).toList() as D;
+    } else {
+      throw StateError("Can't perform a generic deserialization on type: $D");
+    }
+  }
+}
+
+/// Class for shared data between [AsyncTask] instances.
+///
+/// This instance will be transferred to the executor thread/isolate only
+/// once, and not per task, avoiding the [Isolate] messaging bottle neck.
+///
+/// - The internal [data] should NOT be modified after instantiated.
+/// - [S] should be a simple type that can be sent through threads/isolates or
+///   serialized as JSON.
+/// - The default implementation supports Dart basic types:
+///   primitive values (null, num, bool, double, String),
+///   lists and maps whose elements are any of these.
+class SharedData<D, S> {
+  /// The actual data.
+  final D data;
+
+  SharedData(this.data);
+
+  /// Creates a copy of this instance.
+  SharedData<D, S> copy() {
+    var data = this.data;
+    if (data is SerializableData) {
+      return SharedData<D, S>(data.copy() as D);
+    } else {
+      throw StateError("Can't perform a copy");
+    }
+  }
+
+  /// Deserialize a [SharedData] from [serial].
+  SharedData<D, S> deserialize(S serial) {
+    return SharedData(serial as D);
+  }
+
+  /// Serializes this instance to [S].
+  S serialize() => SerializableData.serializeGeneric(data);
+
+  S? _serial;
+
+  /// Serializes this instances to [S] using a cache for recurrent calls.
+  S serializeCached() {
+    _serial ??= serialize();
+    return _serial!;
+  }
+
+  String? _signature;
+
+  /// The signature of [data], computed only once.
+  ///
+  /// The signature is used to identify this shared object between threads/isolates.
+  String get signature => _signature ??= computeSignature();
+
+  /// The computation of [signature].
+  String computeSignature() => SerializableData.computeGenericSignature(data);
+
+  /// Dispose any cached computation, like [signature] and [serializeCached].
+  void reset() {
+    _signature = null;
+    _serial = null;
   }
 }
 
@@ -278,6 +646,9 @@ class AsyncExecutor {
   AsyncTaskLoggerCaller get logger => _logger;
 
   bool _started = false;
+
+  bool get isStarted => _started;
+
   Completer<bool>? _starting;
 
   /// Starts this executor. Any call to [execute] will call [start] if this
@@ -309,6 +680,12 @@ class AsyncExecutor {
       await start();
     }
 
+    if (_closed) {
+      throw AsyncExecutorClosedError('Not ready: executor closed.');
+    } else if (_closing != null) {
+      throw AsyncExecutorClosedError('Not ready: executor closing.');
+    }
+
     if (task.wasSubmitted) {
       return task.waitResult();
     }
@@ -327,6 +704,37 @@ class AsyncExecutor {
     var executions = executeAll(tasks);
     var results = await Future.wait(executions);
     return results;
+  }
+
+  bool _closed = false;
+
+  /// Returns `true` if this executor is already closed.
+  bool get isClosed => _closed;
+
+  Completer<bool>? _closing;
+
+  /// Returns `true` if this executor is closing.
+  bool get isClosing => _closing != null;
+
+  /// Returns `true` if this executor is ready to receive tasks to execute.
+  bool get isReady => !isClosed && !isClosing;
+
+  /// Closes this executor.
+  Future<bool> close() async {
+    if (_closed) return true;
+
+    if (_closing != null) {
+      return _closing!.future;
+    }
+
+    var closing = _closing = Completer<bool>();
+
+    await _executorThread.close();
+
+    _closed = true;
+    closing.complete(true);
+
+    return closing.future;
   }
 
   @override
@@ -360,6 +768,11 @@ abstract class AsyncExecutorThread {
         task._finish(result, initTime: initTime, endTime: endTime);
       }
     }
+  }
+
+  /// Closes this instance.
+  Future<bool> close() async {
+    return true;
   }
 }
 
@@ -422,18 +835,24 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   }
 }
 
+class AsyncExecutorClosedError extends AsyncExecutorError {
+  AsyncExecutorClosedError(dynamic cause) : super(cause);
+}
+
 /// Error for [AsyncTask] execution.
 class AsyncExecutorError {
+  final String? message;
+
   /// The error.
   final dynamic cause;
 
   /// The error stack-trace.
   final dynamic stackTrace;
 
-  AsyncExecutorError(this.cause, this.stackTrace);
+  AsyncExecutorError(this.message, [this.cause, this.stackTrace]);
 
   @override
   String toString() {
-    return 'AsyncExecutorError{cause: $cause, stackTrace: $stackTrace}';
+    return 'AsyncExecutorError{message: $message, cause: $cause, stackTrace: $stackTrace}';
   }
 }

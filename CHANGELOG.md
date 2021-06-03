@@ -1,3 +1,11 @@
+## 1.0.2
+
+- Added `SharedData`, to optimize data sharing between
+  tasks and threads/isolates.
+- `AsyncExecutor`: added `close` to stop and finalize an executor.
+- Added collections extensions:
+  `ListExtension`, `MapExtension`, `SetExtension`, `IterableExtension`.
+
 ## 1.0.1
 
 - Fix `pubspec.yaml` description length.

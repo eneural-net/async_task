@@ -41,6 +41,8 @@ Future<void> _testParallelism(bool sequential, int parallelism) async {
   var elapsedTime =
       endTime.millisecondsSinceEpoch - initTime.millisecondsSinceEpoch;
   print(executor);
+  await executor.close();
+
   print('Test Time: $elapsedTime');
 }
 
@@ -54,7 +56,12 @@ Future<AsyncExecutor> _testParallelismImpl(
       taskTypeRegister: _taskRegister);
   print(executor);
 
-  var counters = List<_Counter>.generate(10, (i) => _Counter(10, i + 1));
+  executor.logger.enabled = true;
+
+  var counterStart = SharedData<int, int>(12000000);
+
+  var counters =
+      List<_Counter>.generate(10, (i) => _Counter(10, i + 1, counterStart));
 
   var executions = executor.executeAll(counters);
 
@@ -76,7 +83,7 @@ Future<AsyncExecutor> _testParallelismImpl(
     var c = counters[i];
     var n = results[i];
     expect(c.isFinished, isTrue);
-    expect(n, equals(c.total * c.stepValue));
+    expect(n, equals(counterStart.data + c.total * c.stepValue));
     expect(n, equals(c.result));
     expect(c.executionTime!.inMilliseconds >= 100, isTrue);
   }
@@ -100,25 +107,36 @@ Future<AsyncExecutor> _testParallelismImpl(
   return executor;
 }
 
-List<AsyncTask> _taskRegister() => [_Counter(0, 0)];
+List<AsyncTask> _taskRegister() => [_Counter(0, 0, SharedData<int, int>(0))];
 
 class _Counter extends AsyncTask<List<int>, int> {
   final int total;
 
   final int stepValue;
 
-  _Counter(this.total, this.stepValue);
+  final SharedData<int, int> start;
+
+  _Counter(this.total, this.stepValue, this.start);
 
   @override
-  AsyncTask<List<int>, int> instantiate(List<int> parameters) =>
-      _Counter(parameters[0], parameters[1]);
+  AsyncTask<List<int>, int> instantiate(List<int> parameters,
+          [SharedData? sharedData]) =>
+      _Counter(
+          parameters[0], parameters[1], sharedData as SharedData<int, int>);
+
+  @override
+  SharedData<int, int> sharedData() => start;
+
+  @override
+  SharedData<int, int> loadSharedData(dynamic serial) =>
+      SharedData<int, int>(serial);
 
   @override
   List<int> parameters() => <int>[total, stepValue];
 
   @override
   FutureOr<int> run() async {
-    var count = 0;
+    var count = start.data;
 
     print('$this <<< ...');
     for (var i = 0; i < total; ++i) {

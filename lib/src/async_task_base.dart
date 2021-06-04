@@ -683,7 +683,7 @@ class AsyncExecutor {
     if (_closed) {
       throw AsyncExecutorClosedError('Not ready: executor closed.');
     } else if (_closing != null) {
-      throw AsyncExecutorClosedError('Not ready: executor closing.');
+      logger.logWarn('Executing task while closing executor: $task');
     }
 
     if (task.wasSubmitted) {

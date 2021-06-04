@@ -48,12 +48,18 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
     _instances.add(this);
   }
 
+  bool _start = false;
+
   @override
   Future<bool> start() async {
+    if (_start) return true;
+    _start = true;
+
     logger.logInfo('Starting $this');
     if (_threads.isNotEmpty) {
       await Future.wait(_threads.map((t) => t.start()));
     }
+
     return true;
   }
 
@@ -66,7 +72,7 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
       return _freeThreads.removeFirst();
     }
 
-    if (_threads.length < totalThreads) {
+    if (_threads.length < totalThreads && _closing == null) {
       var newThread = _IsolateThread(taskRegister, logger);
       _threads.add(newThread);
       await newThread.start();
@@ -86,19 +92,41 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
     _freeThreads.addFirst(thread);
   }
 
+  int _executingTasks = 0;
+
   @override
   Future<R> execute<P, R>(AsyncTask<P, R> task) async {
-    var taskWrapper = _TaskWrapper<P, R>(task);
-
-    if (sequential &&
-        _threads.length >= totalThreads &&
-        (_queue.isNotEmpty || _freeThreads.isEmpty)) {
-      _queue.add(taskWrapper);
-    } else {
-      _dispatchTask(taskWrapper);
+    if (_closed) {
+      throw AsyncExecutorClosedError(null);
     }
 
-    return task.waitResult();
+    _executingTasks++;
+
+    try {
+      var taskWrapper = _TaskWrapper<P, R>(task);
+
+      if (sequential &&
+          _threads.length >= totalThreads &&
+          (_queue.isNotEmpty || _freeThreads.isEmpty)) {
+        _queue.add(taskWrapper);
+      } else {
+        _dispatchTask(taskWrapper);
+      }
+
+      var ret = await task.waitResult();
+      return ret;
+    } finally {
+      --_executingTasks;
+      assert(_executingTasks >= 0);
+
+      if (_executingTasks == 0) {
+        var waitingNoExecutingTasks = _waitingNoExecutingTasks;
+        if (waitingNoExecutingTasks != null &&
+            !waitingNoExecutingTasks.isCompleted) {
+          waitingNoExecutingTasks.complete(true);
+        }
+      }
+    }
   }
 
   void _dispatchTask<P, R>(_TaskWrapper<P, R> taskWrapper,
@@ -127,6 +155,51 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
         _releaseThread(thread);
       }
     }
+  }
+
+  bool _closed = false;
+
+  bool get closed => _closed;
+
+  Completer<bool>? _closing;
+
+  Completer<bool>? _waitingNoExecutingTasks;
+
+  @override
+  Future<bool> close() async {
+    if (!_start) {
+      await Future.delayed(Duration(seconds: 1));
+    }
+
+    if (_closed) return true;
+
+    if (_closing != null) {
+      return _closing!.future;
+    }
+
+    var closing = _closing = Completer<bool>();
+
+    logger.logInfo('Closing $this ; Isolates: $_threads');
+
+    if (_executingTasks > 0) {
+      logger.logInfo(
+          'Waiting for $_executingTasks tasks to execute before finishing isolates...');
+
+      _waitingNoExecutingTasks = Completer<bool>();
+      await _waitingNoExecutingTasks!.future;
+    }
+
+    for (var thread in _threads) {
+      await thread.close();
+    }
+    _threads.clear();
+
+    _closed = true;
+    closing.complete(true);
+
+    logger.logInfo('Closed $this ; Isolates: $_threads');
+
+    return closing.future;
   }
 
   @override

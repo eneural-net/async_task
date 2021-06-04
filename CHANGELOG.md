@@ -1,3 +1,8 @@
+## 1.0.3
+
+- `AsyncExecutor`:
+  - Fix `close` operation while tasks are being executed.
+
 ## 1.0.2
 
 - Added `SharedData`, to optimize data sharing between

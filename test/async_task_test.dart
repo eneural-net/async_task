@@ -104,6 +104,18 @@ Future<AsyncExecutor> _testParallelismImpl(
       totalTime < (!sequential ? 100 + 1000 : (100 * 100 / parallelism) + 1000),
       isTrue);
 
+  await executor.close();
+
+  var error;
+  try {
+    var extraTask = _Counter(10, 100, counterStart);
+    await executor.execute(extraTask);
+  } catch (e) {
+    error = e;
+  }
+
+  expect(error is AsyncExecutorError, isTrue);
+
   return executor;
 }
 

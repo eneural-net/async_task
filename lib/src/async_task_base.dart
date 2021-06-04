@@ -129,11 +129,12 @@ abstract class AsyncTask<P, R> {
     }
   }
 
-  /// Returns an optional [SharedData], that will be transferred to the executor
-  /// thread/isolate only once.
-  SharedData? sharedData() => null;
+  /// Returns an optional [Map] of [SharedData], where each entry will be
+  /// transferred to the executor thread/isolate only once.
+  Map<String, SharedData>? sharedData() => null;
 
-  SharedData? loadSharedData(dynamic serial) => null;
+  /// Load of a `SharedData` [serial] for the corresponding [key].
+  SharedData? loadSharedData(String key, dynamic serial) => null;
 
   /// The parameters of this tasks.
   ///
@@ -142,7 +143,8 @@ abstract class AsyncTask<P, R> {
   P parameters();
 
   /// Creates an instance of this task type with [parameters] and optional [sharedData].
-  AsyncTask<P, R> instantiate(P parameters, [SharedData? sharedData]);
+  AsyncTask<P, R> instantiate(P parameters,
+      [Map<String, SharedData>? sharedData]);
 
   /// Creates a copy of this task in its initial state (before execution state).
   AsyncTask<P, R> copy() => instantiate(parameters(), sharedData());

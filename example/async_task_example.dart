@@ -75,21 +75,30 @@ class PrimeChecker extends AsyncTask<int, bool> {
 
   PrimeChecker(this.n, this.knownPrimes);
 
-  // Instantiates a `PrimeChecker` task with `parameters`.
+  // Instantiates a `PrimeChecker` task with `parameters` and `sharedData`.
   @override
-  AsyncTask<int, bool> instantiate(int parameters, [SharedData? sharedData]) {
+  PrimeChecker instantiate(int parameters,
+      [Map<String, SharedData>? sharedData]) {
     return PrimeChecker(
-        parameters, sharedData as SharedData<List<int>, List<int>>);
+      parameters,
+      sharedData!['knownPrimes'] as SharedData<List<int>, List<int>>,
+    );
   }
 
   // The `SharedData` of this task.
   @override
-  SharedData<List<int>, List<int>> sharedData() => knownPrimes;
+  Map<String, SharedData> sharedData() => {'knownPrimes': knownPrimes};
 
-  // Loads the `SharedData` from `serial`.
+  // Loads the `SharedData` from `serial` for each key.
   @override
-  SharedData<List<int>, List<int>> loadSharedData(dynamic serial) =>
-      SharedData<List<int>, List<int>>(serial);
+  SharedData<List<int>, List<int>> loadSharedData(String key, dynamic serial) {
+    switch (key) {
+      case 'knownPrimes':
+        return SharedData<List<int>, List<int>>(serial);
+      default:
+        throw StateError('Unknown key: $key');
+    }
+  }
 
   // The parameters of this task:
   @override

@@ -62,7 +62,8 @@ class PrimeChecker extends AsyncTask<int, bool> {
 
   // Instantiates a `PrimeChecker` task with `parameters`.
   @override
-  AsyncTask<int, bool> instantiate(int parameters, [SharedData? sharedData]) {
+  AsyncTask<int, bool> instantiate(int parameters,
+      [Map<String, SharedData>? sharedData]) {
     return PrimeChecker(parameters);
   }
 

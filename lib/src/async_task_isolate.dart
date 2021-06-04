@@ -13,7 +13,7 @@ class _TaskWrapper<P, R> {
 
   final P parameters;
 
-  final SharedData? sharedData;
+  final Map<String, SharedData>? sharedData;
 
   //final Completer<R> completer = Completer<R>();
 
@@ -284,14 +284,17 @@ class _IsolateThread {
 
     var response = ReceivePort();
 
-    var sharedData = taskWrapper.sharedData;
+    var sharedDataMap = taskWrapper.sharedData;
 
     List payload;
-    if (sharedData != null) {
+    if (sharedDataMap != null) {
+      var sharedDataSignatures =
+          sharedDataMap.map((k, sd) => MapEntry(k, sd.signature));
+
       payload = [
         taskWrapper.taskType,
         taskWrapper.parameters,
-        sharedData.signature
+        sharedDataSignatures
       ];
     } else {
       payload = [taskWrapper.taskType, taskWrapper.parameters];
@@ -306,9 +309,9 @@ class _IsolateThread {
 
     var ret = (await response.first) as List;
 
-    // Isolate has requested the `SharedData`:
-    if (ret[0] is String) {
-      ret = await _submitSharedData(ret, sharedData);
+    // Isolate has requested a `SharedData`:
+    while (ret[0] is String) {
+      ret = await _submitSharedData(ret, sharedDataMap);
     }
 
     lastCommunication = DateTime.now();
@@ -329,15 +332,23 @@ class _IsolateThread {
   }
 
   Future<List<dynamic>> _submitSharedData(
-      List ret, SharedData? sharedData) async {
+      List ret, Map<String, SharedData>? sharedDataMap) async {
+    var requestedKey = ret[0];
     // `SharedData` signature:
-    var requestedSignature = ret[0];
+    var requestedSignature = ret[1];
     // The port to send the `SharedData`:
-    var sharedDataReplyPort = ret[1] as SendPort;
+    var sharedDataReplyPort = ret[2] as SendPort;
+
+    if (sharedDataMap == null) {
+      throw StateError(
+          'Isolate requested from a not present SharedData Map: $requestedKey = $requestedSignature');
+    }
+
+    var sharedData = sharedDataMap[requestedKey];
 
     if (sharedData == null) {
       throw StateError(
-          'Isolate requested a not present SharedData: $requestedSignature');
+          'Isolate requested a not present SharedData: $requestedKey = $requestedSignature');
     }
 
     var signature = sharedData.signature;
@@ -353,6 +364,7 @@ class _IsolateThread {
     var response2 = ReceivePort();
 
     sharedDataReplyPort.send([
+      requestedKey,
       sharedData.signature,
       sharedData.serializeCached(),
       response2.sendPort,
@@ -424,16 +436,16 @@ class _IsolateThread {
       DateTime submitTime, List<dynamic> message, SendPort replyPort) async {
     if (message.length > 2) {
       String taskType = message[0];
-      var sharedDataSign = message[2];
+      var sharedDataSignatures = message[2];
 
-      var ret =
-          await _resolveSharedData(thID, taskType, sharedDataSign, replyPort);
+      var ret = await _resolveSharedDataMap(
+          thID, taskType, sharedDataSignatures, replyPort);
 
-      var resolvedSharedData = ret.key;
+      var resolvedSharedDataMap = ret.key;
       replyPort = ret.value;
 
       // Swap signature to `SharedData` instance:
-      message[2] = resolvedSharedData;
+      message[2] = resolvedSharedDataMap;
     }
 
     try {
@@ -460,8 +472,29 @@ class _IsolateThread {
   static final Map<String, Completer<SharedData>> _requestingSharedDatas =
       <String, Completer<SharedData>>{};
 
-  static Future<MapEntry<SharedData, SendPort>> _resolveSharedData(int thID,
-      String taskType, String sharedDataSign, SendPort replyPort) async {
+  static Future<MapEntry<Map<String, SharedData>, SendPort>>
+      _resolveSharedDataMap(int thID, String taskType,
+          Map<String, String> sharedDataSignatures, SendPort replyPort) async {
+    var map = <String, SharedData>{};
+
+    for (var entry in sharedDataSignatures.entries) {
+      var key = entry.key;
+      var sign = entry.value;
+      var ret = await _resolveSharedData(thID, taskType, key, sign, replyPort);
+
+      map[key] = ret.key;
+      replyPort = ret.value;
+    }
+
+    return MapEntry(map, replyPort);
+  }
+
+  static Future<MapEntry<SharedData, SendPort>> _resolveSharedData(
+      int thID,
+      String taskType,
+      String sharedDataKey,
+      String sharedDataSign,
+      SendPort replyPort) async {
     var resolvedSharedData = _sharedDatas[sharedDataSign];
 
     // If `SharedData` with `sharedDataSign` is not present, request it:
@@ -483,20 +516,28 @@ class _IsolateThread {
         }
 
         var sharedDataPort = ReceivePort();
-        replyPort.send([sharedDataSign, sharedDataPort.sendPort]);
+        replyPort
+            .send([sharedDataKey, sharedDataSign, sharedDataPort.sendPort]);
 
         var ret = (await sharedDataPort.first) as List;
 
-        var retSign = ret[0] as String;
-        var retData = ret[1];
-        var retPort = ret[2] as SendPort;
+        var retKey = ret[0] as String;
+        var retSign = ret[1] as String;
+        var retData = ret[2];
+        var retPort = ret[3] as SendPort;
+
+        if (retKey != sharedDataKey) {
+          throw StateError(
+              'Different provided SharedData key: requested = $sharedDataKey ; received = $retKey');
+        }
 
         if (retSign != sharedDataSign) {
           throw StateError(
               'Different provided SharedData signature: requested = $sharedDataSign ; received = $retSign');
         }
 
-        resolvedSharedData = taskRegistered.loadSharedData(retData)!;
+        resolvedSharedData =
+            taskRegistered.loadSharedData(sharedDataKey, retData)!;
         _sharedDatas[sharedDataSign] = resolvedSharedData;
 
         replyPort = retPort;
@@ -517,7 +558,8 @@ class _IsolateThread {
       int thID, DateTime submitTime, List<dynamic> message) async {
     String taskType = message[0];
     dynamic parameters = message[1];
-    SharedData? sharedData = message.length > 2 ? message[2] : null;
+    Map<String, SharedData>? sharedDataMap =
+        message.length > 2 ? message[2] : null;
 
     var taskRegistered = _IsolateThread._registeredTasks[taskType];
 
@@ -525,7 +567,7 @@ class _IsolateThread {
       throw StateError("Can't find registered task for: $taskType");
     }
 
-    var task = taskRegistered.instantiate(parameters, sharedData);
+    var task = taskRegistered.instantiate(parameters, sharedDataMap);
 
     task.submitTime = submitTime;
 

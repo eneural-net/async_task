@@ -9,13 +9,25 @@ void main() {
     setUp(() {});
 
     test(
+      'sequential = false, parallelism = 0',
+      () => _testParallelism(false, 0),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 0',
+      () => _testParallelism(true, 0),
+      //skip: true,
+    );
+
+    test(
       'sequential = false, parallelism = 1',
       () => _testParallelism(false, 1),
       //skip: true,
     );
 
     test(
-      'sequential = false, parallelism = 1',
+      'sequential = true, parallelism = 1',
       () => _testParallelism(true, 1),
       //skip: true,
     );
@@ -59,9 +71,10 @@ Future<AsyncExecutor> _testParallelismImpl(
   executor.logger.enabled = true;
 
   var counterStart = SharedData<int, int>(12000000);
+  var counterStartMultiplier = SharedData<int, int>(2);
 
-  var counters =
-      List<_Counter>.generate(10, (i) => _Counter(10, i + 1, counterStart));
+  var counters = List<_Counter>.generate(
+      10, (i) => _Counter(10, i + 1, counterStart, counterStartMultiplier));
 
   var executions = executor.executeAll(counters);
 
@@ -79,11 +92,13 @@ Future<AsyncExecutor> _testParallelismImpl(
 
   print('Counters results: $results');
 
+  var start = counterStart.data * counterStartMultiplier.data;
+
   for (var i = 0; i < counters.length; ++i) {
     var c = counters[i];
     var n = results[i];
     expect(c.isFinished, isTrue);
-    expect(n, equals(counterStart.data + c.total * c.stepValue));
+    expect(n, equals(start + c.total * c.stepValue));
     expect(n, equals(c.result));
     expect(c.executionTime!.inMilliseconds >= 100, isTrue);
   }
@@ -99,16 +114,17 @@ Future<AsyncExecutor> _testParallelismImpl(
   print('parallelism: $parallelism');
   print('totalTime: $totalTime');
 
-  expect(totalTime > (!sequential ? 100 : (100 * 10 / parallelism)), isTrue);
-  expect(
-      totalTime < (!sequential ? 100 + 1000 : (100 * 100 / parallelism) + 1000),
+  var timeDiv = parallelism > 1 ? parallelism : 1;
+
+  expect(totalTime > (!sequential ? 100 : (100 * 10 / timeDiv)), isTrue);
+  expect(totalTime < (!sequential ? 100 + 1000 : (100 * 100 / timeDiv) + 1000),
       isTrue);
 
   await executor.close();
 
   var error;
   try {
-    var extraTask = _Counter(10, 100, counterStart);
+    var extraTask = _Counter(10, 100, counterStart, counterStartMultiplier);
     await executor.execute(extraTask);
   } catch (e) {
     error = e;
@@ -119,7 +135,8 @@ Future<AsyncExecutor> _testParallelismImpl(
   return executor;
 }
 
-List<AsyncTask> _taskRegister() => [_Counter(0, 0, SharedData<int, int>(0))];
+List<AsyncTask> _taskRegister() =>
+    [_Counter(0, 0, SharedData<int, int>(0), SharedData<int, int>(0))];
 
 class _Counter extends AsyncTask<List<int>, int> {
   final int total;
@@ -127,28 +144,41 @@ class _Counter extends AsyncTask<List<int>, int> {
   final int stepValue;
 
   final SharedData<int, int> start;
+  final SharedData<int, int> startMultiplier;
 
-  _Counter(this.total, this.stepValue, this.start);
+  _Counter(this.total, this.stepValue, this.start, this.startMultiplier);
 
   @override
   AsyncTask<List<int>, int> instantiate(List<int> parameters,
-          [SharedData? sharedData]) =>
+          [Map<String, SharedData>? sharedData]) =>
       _Counter(
-          parameters[0], parameters[1], sharedData as SharedData<int, int>);
+          parameters[0],
+          parameters[1],
+          sharedData!['start'] as SharedData<int, int>,
+          sharedData['startMultiplier'] as SharedData<int, int>);
 
   @override
-  SharedData<int, int> sharedData() => start;
+  Map<String, SharedData> sharedData() =>
+      <String, SharedData>{'start': start, 'startMultiplier': startMultiplier};
 
   @override
-  SharedData<int, int> loadSharedData(dynamic serial) =>
-      SharedData<int, int>(serial);
+  SharedData loadSharedData(String key, dynamic serial) {
+    switch (key) {
+      case 'start':
+        return SharedData<int, int>(serial);
+      case 'startMultiplier':
+        return SharedData<int, int>(serial);
+      default:
+        throw StateError('Unknown key: $key');
+    }
+  }
 
   @override
   List<int> parameters() => <int>[total, stepValue];
 
   @override
   FutureOr<int> run() async {
-    var count = start.data;
+    var count = start.data * startMultiplier.data;
 
     print('$this <<< ...');
     for (var i = 0; i < total; ++i) {

@@ -1,3 +1,9 @@
+## 1.0.4
+
+- `AsyncTask`:
+  - Allow multiple `SharedData`: Optional method `sharedData`
+    now returns a `Map<String,SharedData>`.
+
 ## 1.0.3
 
 - `AsyncExecutor`:

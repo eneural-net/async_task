@@ -1,3 +1,23 @@
+## 1.0.5
+
+- Added `AsyncTaskPlatform` and `AsyncTaskPlatformType`.
+- `AsyncTask`:
+  - Optimize `taskType`
+  - Optimize `execute` to use less `asyn` operations.
+- Added `AsyncExecutorSharedDataInfo` to report `SharedData` information.
+- `AsyncExecutor`:
+  - New constructor parameter `parallelismPercentage`. 
+  - Optimize `execute`, `executeAll` and `executeAllAndWaitResults` to dispatch less asyn operations.
+  - Added `disposeSharedData` and `disposeSharedDataInfo`.
+- Extensions:
+  - Added `IterableFutureOrExtension` and `IterableFutureExtension`.
+- `_AsyncExecutorMultiThread`:
+  - Optimized to use less `asyn` operations.
+  - Using `_RawReceivePortPool` to optimize ports.
+  - Optimized to pre send `SharedData`.
+- Added `_RawReceivePortPool`: pool of reusable `_ReceivePort`.
+- Added `_ReceivePort`: an optimized `RawReceivePort`.
+
 ## 1.0.4
 
 - `AsyncTask`:

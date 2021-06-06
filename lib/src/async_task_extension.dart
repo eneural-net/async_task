@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:async_task/async_task.dart';
@@ -144,6 +145,12 @@ extension MapExtension<K, V> on Map<K, V> {
 
     return map((k, v) => MapEntry(SerializableData.serializeGeneric(k),
         SerializableData.serializeGeneric(v))) as S;
+  }
+
+  void removeAllKeys(Iterable<Object?> keys) {
+    for (var k in keys) {
+      remove(k);
+    }
   }
 }
 
@@ -560,4 +567,44 @@ extension Float64x2ListExtension on Float64x2List {
   List<int> toInts() => ListFloat64x2Extension.entriesToInts(this);
 
   S serialize<S>() => toDoubles() as S;
+}
+
+extension IterableFutureOrExtension<T> on Iterable<FutureOr<T>> {
+  List<Future<T>> selectFutures() => whereType<Future<T>>().toList();
+
+  FutureOr<List<T>> waitFutures() {
+    var futures = selectFutures();
+    if (futures.isEmpty) {
+      return <T>[];
+    } else {
+      return Future.wait(futures);
+    }
+  }
+
+  FutureOr<V> waitFuturesAndReturnValue<V>(V value) {
+    var futures = selectFutures();
+    if (futures.isEmpty) {
+      return value;
+    } else {
+      return Future.wait(futures).then((_) => value);
+    }
+  }
+}
+
+extension IterableFutureExtension<T> on Iterable<Future<T>> {
+  FutureOr<List<T>> waitFutures() {
+    if (isEmpty) {
+      return <T>[];
+    } else {
+      return Future.wait(this);
+    }
+  }
+
+  FutureOr<V> waitFuturesAndReturnValue<V>(V value) {
+    if (isEmpty) {
+      return value;
+    } else {
+      return Future.wait(this).then((_) => value);
+    }
+  }
 }

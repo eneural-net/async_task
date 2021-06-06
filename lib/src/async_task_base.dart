@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 
-import 'async_task_extension.dart';
 import 'async_task_generic.dart'
     if (dart.library.isolate) 'async_task_isolate.dart';
+import 'async_task_shared_data.dart';
 
 /// Status of an [AsyncTask].
 enum AsyncTaskStatus {
@@ -16,11 +14,41 @@ enum AsyncTaskStatus {
   error,
 }
 
+/// [AsyncTask] Platform type.
+enum AsyncTaskPlatformType {
+  generic,
+  isolate,
+}
+
+/// [AsyncTask] Platform information.
+class AsyncTaskPlatform {
+  final AsyncTaskPlatformType platformType;
+
+  /// Maximum number of threads/isolates of the platform.
+  final maximumParallelism;
+
+  AsyncTaskPlatform(this.platformType, this.maximumParallelism);
+
+  /// Returns `true` if is a native platform.
+  bool get isNative => platformType == AsyncTaskPlatformType.isolate;
+
+  /// Returns `true` if is a generic platform.
+  bool get isGeneric => platformType == AsyncTaskPlatformType.generic;
+}
+
 /// Base class for tasks implementation.
 abstract class AsyncTask<P, R> {
   final Completer<R> _completer = Completer<R>();
 
-  String get taskType => '$runtimeType';
+  String? _taskType;
+
+  String get taskType {
+    var taskType = _taskType;
+    if (taskType == null) {
+      _taskType = taskType = '$runtimeType';
+    }
+    return taskType;
+  }
 
   R? _result;
 
@@ -51,15 +79,27 @@ abstract class AsyncTask<P, R> {
   bool get hasError => isFinished && _error != null;
 
   /// Executes this tasks immediately.
-  FutureOr<R> execute() async {
+  FutureOr<R> execute() {
     _initTime = DateTime.now();
 
     submitTime ??= _initTime;
 
     try {
-      var ret = await run();
-      _finish(ret, endTime: DateTime.now());
-      return ret;
+      var ret = run();
+
+      if (ret is Future) {
+        var future = ret as Future;
+
+        return future.then((result) {
+          _finish(result, endTime: DateTime.now());
+          return result;
+        }, onError: (e, s) {
+          _finishError(e, s, endTime: DateTime.now());
+        });
+      } else {
+        _finish(ret, endTime: DateTime.now());
+        return ret;
+      }
     } catch (e, s) {
       _finishError(e, s, endTime: DateTime.now());
       rethrow;
@@ -191,353 +231,6 @@ abstract class AsyncTask<P, R> {
   }
 }
 
-/// Interface for serializable data classes:
-abstract class SerializableData<D, S> {
-  /// Creates a new instance with [data].
-  SerializableData<D, S> instantiate(D data);
-
-  /// Creates a copy of this instance.
-  SerializableData<D, S> copy();
-
-  /// Deserializes [serial] to [D].
-  D deserializeData(S serial);
-
-  /// Deserializes [serial] to a instance of this type.
-  SerializableData<D, S> deserialize(S serial) =>
-      instantiate(deserializeData(serial));
-
-  /// Serializes this instance to [S].
-  S serialize();
-
-  /// Computes the signature of this instance.
-  String computeSignature();
-
-  /// Computes a generic signature for [SerializableData] and basic Dart types:
-  /// primitive values (null, num, bool, double, String),
-  /// lists and maps whose elements are any of these.
-  static String computeGenericSignature<D>(D data) {
-    if (data is SerializableData) {
-      return data.computeSignature();
-    } else if (data is int) {
-      return 'int>$data';
-    } else if (data is double) {
-      return 'double>$data';
-    } else if (data is num) {
-      return 'num>$data';
-    } else if (data is String) {
-      var h = data.hashCode;
-      return 'str>$h';
-    } else if (data is bool) {
-      return 'bool>$data';
-    } else if (data is Float32x4) {
-      return 'f32x4>$data';
-    } else if (data is Int32x4) {
-      return 'i32x4>$data';
-    } else if (data is Float64x2) {
-      return 'i64x2>$data';
-    } else if (data is List) {
-      var h = data.computeHashcode();
-      return 'list>$h';
-    } else if (data is Map) {
-      var h = data.computeHashcode();
-      return 'map>$h';
-    } else if (data is Set) {
-      var h = data.computeHashcode();
-      return 'map>$h';
-    } else if (data is Iterable) {
-      var h = data.computeHashcode();
-      return 'map>$h';
-    } else {
-      var h = data.hashCode;
-      return 'obj:$h';
-    }
-  }
-
-  /// Creates generic copy for [SerializableData] and basic Dart types:
-  /// primitive values (null, num, bool, double, String),
-  /// lists and maps whose elements are any of these.
-  static D copyGeneric<D>(D data) {
-    if (data is SerializableData) {
-      return data.copy() as D;
-    } else if (data is int) {
-      return data;
-    } else if (data is double) {
-      return data;
-    } else if (data is num) {
-      return data;
-    } else if (data is String) {
-      return data;
-    } else if (data is bool) {
-      return data;
-    } else if (data is Float32x4) {
-      return data;
-    } else if (data is Int32x4) {
-      return data;
-    } else if (data is Float64x2) {
-      return data;
-    } else if (data is MapEntry) {
-      return MapEntry(copyGeneric(data.key), copyGeneric(data.key)) as D;
-    } else if (data is Uint8List) {
-      return Uint8List.fromList(data) as D;
-    } else if (data is Uint16List) {
-      return Uint16List.fromList(data) as D;
-    } else if (data is Uint32List) {
-      return Uint32List.fromList(data) as D;
-    } else if (data is Int8List) {
-      return Int8List.fromList(data) as D;
-    } else if (data is Int16List) {
-      return Int8List.fromList(data) as D;
-    } else if (data is Int32List) {
-      return Int32List.fromList(data) as D;
-    } else if (data is Float32List) {
-      return Float32List.fromList(data) as D;
-    } else if (data is Float64List) {
-      return Float32List.fromList(data) as D;
-    } else if (data is Float32x4List) {
-      return Float32x4List.fromList(data) as D;
-    } else if (data is Int32x4List) {
-      return Int32x4List.fromList(data) as D;
-    } else if (data is Float64x2List) {
-      return Float64x2List.fromList(data) as D;
-    } else if (data is List) {
-      return data.deepCopy() as D;
-    } else if (data is Map) {
-      return data.deepCopy() as D;
-    } else if (data is Set) {
-      return data.deepCopy() as D;
-    } else if (data is Iterable) {
-      return data.deepCopy() as D;
-    } else {
-      throw StateError(
-          "Can't perform a generic copy on type: ${data.runtimeType}");
-    }
-  }
-
-  /// Generic serialization of [SerializableData] and basic Dart types:
-  /// primitive values (null, num, bool, double, String),
-  /// lists and maps whose elements are any of these.
-  static S serializeGeneric<S>(dynamic data) {
-    if (data is SerializableData) {
-      return data.serialize() as S;
-    } else if (data is int) {
-      return data as S;
-    } else if (data is double) {
-      return data as S;
-    } else if (data is num) {
-      return data as S;
-    } else if (data is String) {
-      return data as S;
-    } else if (data is bool) {
-      return data as S;
-    } else if (data is Float32x4) {
-      return data as S;
-    } else if (data is Int32x4) {
-      return data as S;
-    } else if (data is Float64x2) {
-      return data as S;
-    } else if (data is MapEntry) {
-      return MapEntry(serializeGeneric(data.key), serializeGeneric(data.key))
-          as S;
-    } else if (data is Uint8List) {
-      return data.serialize() as S;
-    } else if (data is Uint16List) {
-      return data.serialize() as S;
-    } else if (data is Uint32List) {
-      return data.serialize() as S;
-    } else if (data is Int8List) {
-      return data.serialize() as S;
-    } else if (data is Int16List) {
-      return data.serialize() as S;
-    } else if (data is Int32List) {
-      return data.serialize() as S;
-    } else if (data is Float32List) {
-      return data.serialize() as S;
-    } else if (data is Float64List) {
-      return data.serialize() as S;
-    } else if (data is Float32x4List) {
-      return data.serialize() as S;
-    } else if (data is Int32x4List) {
-      return data.serialize() as S;
-    } else if (data is Float64x2List) {
-      return data.serialize() as S;
-    } else if (data is List) {
-      return data.serialize() as S;
-    } else if (data is Map) {
-      return data.serialize() as S;
-    } else if (data is Set) {
-      return data.serialize() as S;
-    } else if (data is Iterable) {
-      return data.serialize() as S;
-    } else {
-      throw StateError(
-          "Can't perform a generic serialization on type: ${data.runtimeType}");
-    }
-  }
-
-  static Type _toType<T>() => T;
-
-  static final _typeListInt = _toType<List<int>>();
-  static final _typeListDouble = _toType<List<double>>();
-  static final _typeListNum = _toType<List<num>>();
-  static final _typeListBool = _toType<List<bool>>();
-  static final _typeListString = _toType<List<String>>();
-
-  static final _typeSetInt = _toType<Set<int>>();
-  static final _typeSetDouble = _toType<Set<double>>();
-  static final _typeSetNum = _toType<Set<num>>();
-  static final _typeSetBool = _toType<Set<bool>>();
-  static final _typeSetString = _toType<Set<String>>();
-
-  static final _typeIterableInt = _toType<Iterable<int>>();
-  static final _typeIterableDouble = _toType<Iterable<double>>();
-  static final _typeIterableNum = _toType<Iterable<num>>();
-  static final _typeIterableBool = _toType<Iterable<bool>>();
-  static final _typeIterableString = _toType<Iterable<String>>();
-
-  static bool _isBasicCollectionType(Type t) {
-    return (t == _typeListInt ||
-        t == _typeListDouble ||
-        t == _typeListNum ||
-        t == _typeListBool ||
-        t == _typeListString ||
-        t == _typeSetInt ||
-        t == _typeSetDouble ||
-        t == _typeSetNum ||
-        t == _typeSetBool ||
-        t == _typeSetString ||
-        t == _typeIterableInt ||
-        t == _typeIterableDouble ||
-        t == _typeIterableNum ||
-        t == _typeIterableBool ||
-        t == _typeIterableString);
-  }
-
-  static D deserializeGeneric<D>(dynamic serial) {
-    if (D == int) {
-      return serial as D;
-    } else if (D == double) {
-      return serial as D;
-    } else if (D == num) {
-      return serial as D;
-    } else if (D == String) {
-      return serial as D;
-    } else if (D == bool) {
-      return serial as D;
-    } else if (D == Float32x4) {
-      return serial as D;
-    } else if (D == Int32x4) {
-      return serial as D;
-    } else if (D == Float64x2) {
-      return serial as D;
-    } else if (D == MapEntry) {
-      var e = serial as MapEntry;
-      return MapEntry(deserializeGeneric(e.key), deserializeGeneric(e.key))
-          as D;
-    } else if (D == Uint8List) {
-      return Uint8List.fromList(serial as List<int>) as D;
-    } else if (D == Uint16List) {
-      return Uint16List.fromList(serial as List<int>) as D;
-    } else if (D == Uint32List) {
-      return Uint32List.fromList(serial as List<int>) as D;
-    } else if (D == Int8List) {
-      return Int8List.fromList(serial as List<int>) as D;
-    } else if (D == Int16List) {
-      return Int16List.fromList(serial as List<int>) as D;
-    } else if (D == Int32List) {
-      return Int32List.fromList(serial as List<int>) as D;
-    } else if (D == Float32List) {
-      return Float32List.fromList(serial as List<double>) as D;
-    } else if (D == Float64List) {
-      return Float64List.fromList(serial as List<double>) as D;
-    } else if (D == Float32x4List) {
-      var e = serial as List<double>;
-      return e.toFloat32x4List() as D;
-    } else if (D == Int32x4List) {
-      var e = serial as List<int>;
-      return e.toInt32x4List() as D;
-    } else if (D == Float64x2List) {
-      var e = serial as List<double>;
-      return e.toFloat64x2List() as D;
-    } else if (_isBasicCollectionType(D)) {
-      return serial as D;
-    } else if (D == List) {
-      var e = serial as List;
-      return e.map(deserializeGeneric).toList() as D;
-    } else if (D == Map) {
-      var e = serial as Map;
-      return e as D;
-    } else if (D == Set) {
-      var e = serial as Set;
-      return e.map(deserializeGeneric).toSet() as D;
-    } else if (D == Iterable) {
-      var e = serial as Iterable;
-      return e.map(deserializeGeneric).toList() as D;
-    } else {
-      throw StateError("Can't perform a generic deserialization on type: $D");
-    }
-  }
-}
-
-/// Class for shared data between [AsyncTask] instances.
-///
-/// This instance will be transferred to the executor thread/isolate only
-/// once, and not per task, avoiding the [Isolate] messaging bottle neck.
-///
-/// - The internal [data] should NOT be modified after instantiated.
-/// - [S] should be a simple type that can be sent through threads/isolates or
-///   serialized as JSON.
-/// - The default implementation supports Dart basic types:
-///   primitive values (null, num, bool, double, String),
-///   lists and maps whose elements are any of these.
-class SharedData<D, S> {
-  /// The actual data.
-  final D data;
-
-  SharedData(this.data);
-
-  /// Creates a copy of this instance.
-  SharedData<D, S> copy() {
-    var data = this.data;
-    if (data is SerializableData) {
-      return SharedData<D, S>(data.copy() as D);
-    } else {
-      throw StateError("Can't perform a copy");
-    }
-  }
-
-  /// Deserialize a [SharedData] from [serial].
-  SharedData<D, S> deserialize(S serial) {
-    return SharedData(serial as D);
-  }
-
-  /// Serializes this instance to [S].
-  S serialize() => SerializableData.serializeGeneric(data);
-
-  S? _serial;
-
-  /// Serializes this instances to [S] using a cache for recurrent calls.
-  S serializeCached() {
-    _serial ??= serialize();
-    return _serial!;
-  }
-
-  String? _signature;
-
-  /// The signature of [data], computed only once.
-  ///
-  /// The signature is used to identify this shared object between threads/isolates.
-  String get signature => _signature ??= computeSignature();
-
-  /// The computation of [signature].
-  String computeSignature() => SerializableData.computeGenericSignature(data);
-
-  /// Dispose any cached computation, like [signature] and [serializeCached].
-  void reset() {
-    _signature = null;
-    _serial = null;
-  }
-}
-
 AsyncExecutorThread createAsyncExecutorThread(
     AsyncTaskLoggerCaller logger, bool sequential, int parallelism,
     [AsyncTaskRegister? taskRegister]) {
@@ -601,9 +294,9 @@ class AsyncTaskLoggerCaller {
 
   bool enabledExecution = false;
 
-  void logExecution(dynamic message, dynamic thread, dynamic task) {
+  void logExecution(dynamic message, dynamic a, dynamic b) {
     if (enabledExecution) {
-      log('EXEC', '$message > $thread > $task');
+      log('EXEC', '$message > $a > $b');
     }
   }
 }
@@ -612,6 +305,22 @@ typedef AsyncTaskRegister = FutureOr<List<AsyncTask>> Function();
 
 /// Asynchronous Executor of [AsyncTask].
 class AsyncExecutor {
+  /// The maximum number of threads/isolates that this process can have.
+  static int get maximumParallelism => getAsyncExecutorMaximumParallelism();
+
+  /// Returns a valid [parallelism] parameter to use in constructor.
+  static int parameterParallelism({int? value, double? byPercentage}) {
+    if (byPercentage != null) {
+      if (byPercentage > 1) byPercentage /= 100;
+      var p = (maximumParallelism * byPercentage).round();
+      return p.clamp(0, maximumParallelism);
+    } else if (value != null) {
+      return value.clamp(0, maximumParallelism);
+    } else {
+      return 2.clamp(0, maximumParallelism);
+    }
+  }
+
   /// If `true` the tasks will be executed sequentially, waiting each
   /// task to finished before start the next, in the order of [execute] call.
   final bool sequential;
@@ -632,18 +341,25 @@ class AsyncExecutor {
 
   AsyncExecutor(
       {bool sequential = false,
-      int parallelism = 1,
+      int? parallelism,
+      double? parallelismPercentage,
       this.taskTypeRegister,
       AsyncTaskLogger? logger})
       : sequential = sequential,
-        parallelism = math.max(0, parallelism),
+        parallelism = parameterParallelism(
+            value: parallelism, byPercentage: parallelismPercentage),
         _executorThread = createAsyncExecutorThread(
             AsyncTaskLoggerCaller(logger),
             sequential,
-            math.max(0, parallelism),
+            parameterParallelism(
+                value: parallelism, byPercentage: parallelismPercentage),
             taskTypeRegister) {
     _logger = _executorThread.logger;
   }
+
+  AsyncTaskPlatform get platform => _executorThread.platform;
+
+  int get maximumWorkers => _executorThread.maximumWorkers;
 
   AsyncTaskLoggerCaller get logger => _logger;
 
@@ -677,9 +393,10 @@ class AsyncExecutor {
   /// Execute [task] using this executor.
   ///
   /// If task was already submitted the execution will be skipped.
-  Future<R> execute<P, R>(AsyncTask<P, R> task) async {
-    if (!_started) {
-      await start();
+  Future<R> execute<P, R>(AsyncTask<P, R> task,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+    if (task.wasSubmitted) {
+      return task.waitResult();
     }
 
     if (_closed) {
@@ -688,24 +405,71 @@ class AsyncExecutor {
       logger.logWarn('Executing task while closing executor: $task');
     }
 
-    if (task.wasSubmitted) {
-      return task.waitResult();
+    if (!_started) {
+      return _executeNotStarted(task, sharedDataInfo: sharedDataInfo);
+    } else {
+      return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
     }
-
-    return _executorThread.execute(task);
   }
+
+  Future<R> _executeNotStarted<P, R>(AsyncTask<P, R> task,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo}) async {
+    await start();
+    return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
+  }
+
+  /// Disposes [SharedData] sent to other `threads/isolates`.
+  ///
+  /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
+  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+          {bool async = false}) =>
+      _executorThread.disposeSharedData(sharedDataSignatures, async: async);
+
+  /// Disposes [SharedData] sent to other `threads/isolates`.
+  ///
+  /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
+  ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
+  Future<bool> disposeSharedDataInfo<P, R>(
+          AsyncExecutorSharedDataInfo sharedDataInfo,
+          {bool async = false}) =>
+      _executorThread.disposeSharedDataInfo(sharedDataInfo, async: async);
 
   /// Executes all the [tasks] using this executor. Calling [execute]
   /// for each task.
-  List<Future<R>> executeAll<P, R>(Iterable<AsyncTask<P, R>> tasks) =>
-      tasks.map((t) => execute(t)).toList();
+  List<Future<R>> executeAll<P, R>(Iterable<AsyncTask<P, R>> tasks,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+    if (tasks is List<AsyncTask<P, R>>) {
+      return List.generate(tasks.length,
+          (i) => execute(tasks[i], sharedDataInfo: sharedDataInfo));
+    } else {
+      return tasks
+          .map((t) => execute(t, sharedDataInfo: sharedDataInfo))
+          .toList();
+    }
+  }
 
   /// Executes all the [tasks] using this executor and waits for the results.
   Future<List<R>> executeAllAndWaitResults<P, R>(
-      Iterable<AsyncTask<P, R>> tasks) async {
-    var executions = executeAll(tasks);
-    var results = await Future.wait(executions);
-    return results;
+      Iterable<AsyncTask<P, R>> tasks,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo,
+      bool disposeSentSharedData = false}) async {
+    if (disposeSentSharedData) {
+      sharedDataInfo ??= AsyncExecutorSharedDataInfo();
+
+      var executions = executeAll(tasks, sharedDataInfo: sharedDataInfo);
+      var results = await Future.wait(executions);
+
+      if (sharedDataInfo.sentSharedDataSignatures.isNotEmpty) {
+        await disposeSharedData(sharedDataInfo.sentSharedDataSignatures);
+        sharedDataInfo.disposedSharedDataSignatures
+            .addAll(sharedDataInfo.sentSharedDataSignatures);
+      }
+
+      return results;
+    } else {
+      var executions = executeAll(tasks, sharedDataInfo: sharedDataInfo);
+      return await Future.wait(executions);
+    }
   }
 
   bool _closed = false;
@@ -745,6 +509,28 @@ class AsyncExecutor {
   }
 }
 
+/// Collects [SharedData] execution information.
+class AsyncExecutorSharedDataInfo {
+  Set<String> sentSharedDataSignatures = {};
+
+  Set<String> disposedSharedDataSignatures = {};
+
+  bool get isEmpty =>
+      sentSharedDataSignatures.isEmpty && disposedSharedDataSignatures.isEmpty;
+
+  @override
+  String toString() {
+    if (isEmpty) {
+      return 'AsyncExecutorSharedDataInfo{ empty }';
+    }
+
+    return 'AsyncExecutorSharedDataInfo{ '
+        'sent: $sentSharedDataSignatures'
+        ', disposed: $disposedSharedDataSignatures'
+        ' }';
+  }
+}
+
 /// Base class for executor thread implementation.
 abstract class AsyncExecutorThread {
   final AsyncTaskLoggerCaller logger;
@@ -752,11 +538,30 @@ abstract class AsyncExecutorThread {
 
   AsyncExecutorThread(this.logger, this.sequential);
 
+  AsyncTaskPlatform get platform;
+
+  int get maximumWorkers;
+
   /// Starts this thread.
-  Future<bool> start();
+  FutureOr<bool> start();
 
   /// Executes [task] in this thread.
-  Future<R> execute<P, R>(AsyncTask<P, R> task);
+  Future<R> execute<P, R>(AsyncTask<P, R> task,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo});
+
+  /// Disposes [SharedData] sent to other `threads/isolates`.
+  ///
+  /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
+  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+      {bool async = false});
+
+  /// Disposes [SharedData] sent to other `threads/isolates`.
+  ///
+  /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
+  ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
+  Future<bool> disposeSharedDataInfo<P, R>(
+      AsyncExecutorSharedDataInfo sharedDataInfo,
+      {bool async = false});
 
   /// Perform a task finish operation.
   void finishTask<P, R>(
@@ -782,14 +587,24 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   _AsyncExecutorSingleThread(AsyncTaskLoggerCaller logger, bool sequential)
       : super(logger, sequential);
 
+  final AsyncTaskPlatform _platform =
+      AsyncTaskPlatform(AsyncTaskPlatformType.generic, 1);
+
   @override
-  Future<bool> start() async => true;
+  AsyncTaskPlatform get platform => _platform;
+
+  @override
+  int get maximumWorkers => 1;
+
+  @override
+  FutureOr<bool> start() => true;
 
   final QueueList<AsyncTask> _queue = QueueList<AsyncTask>(32);
   AsyncTask? _executing;
 
   @override
-  Future<R> execute<P, R>(AsyncTask<P, R> task) async {
+  Future<R> execute<P, R>(AsyncTask<P, R> task,
+      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
     if (sequential) {
       if (_executing == null) {
         _executing = task;
@@ -829,6 +644,19 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         _consumeQueue();
       });
     }
+  }
+
+  @override
+  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+      {bool async = false}) {
+    return Future.value(true);
+  }
+
+  @override
+  Future<bool> disposeSharedDataInfo<P, R>(
+      AsyncExecutorSharedDataInfo sharedDataInfo,
+      {bool async = false}) {
+    return Future.value(true);
   }
 
   @override

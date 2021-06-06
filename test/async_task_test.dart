@@ -69,6 +69,7 @@ Future<AsyncExecutor> _testParallelismImpl(
   print(executor);
 
   executor.logger.enabled = true;
+  executor.logger.enabledExecution = true;
 
   var counterStart = SharedData<int, int>(12000000);
   var counterStartMultiplier = SharedData<int, int>(2);
@@ -76,7 +77,9 @@ Future<AsyncExecutor> _testParallelismImpl(
   var counters = List<_Counter>.generate(
       10, (i) => _Counter(10, i + 1, counterStart, counterStartMultiplier));
 
-  var executions = executor.executeAll(counters);
+  var sharedDataInfo = AsyncExecutorSharedDataInfo();
+  var executions =
+      executor.executeAll(counters, sharedDataInfo: sharedDataInfo);
 
   expect(executions.length, equals(counters.length));
 
@@ -87,6 +90,15 @@ Future<AsyncExecutor> _testParallelismImpl(
   }
 
   var results = await Future.wait(executions);
+
+  expect(sharedDataInfo.sentSharedDataSignatures.length,
+      equals(executor.platform.isNative ? 2 : 0));
+
+  await executor.disposeSharedDataInfo(sharedDataInfo);
+  print(sharedDataInfo);
+
+  expect(sharedDataInfo.disposedSharedDataSignatures.length,
+      equals(sharedDataInfo.sentSharedDataSignatures.length));
 
   expect(results.length, equals(counters.length));
 

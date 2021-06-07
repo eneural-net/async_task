@@ -229,7 +229,7 @@ class YourTask extends AsyncTask<String, int> {
     // ...
     
     var channel = channelResolved()!;
-    var result = await channel.sendAndWaitResponse<int, int>('some message');
+    var result = await channel.sendAndWaitResponse<String, String>('some message');
 
     // ...
   }

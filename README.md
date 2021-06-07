@@ -207,6 +207,52 @@ The field `knownPrimes` above will be shared between tasks. In platforms with su
 for [dart:isolate][dart_isolate] `knownPrimes` will be sent through a [Isolate] port only once,
 avoiding multiple copies and unnecessary memory allocations.
 
+## AsyncTaskChannel
+
+An `AsyncTask` can have a communication channel that can be used to send/received messages
+during task execution.
+
+To use a task channel just override `channelInstantiator`, than use `channelResolved()` inside
+the task and `await channel()` outside it:
+
+```dart
+class YourTask extends AsyncTask<String, int> {
+  // ...
+  
+  @override
+  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel();
+
+  // ...
+
+  @override
+  FutureOr<int> run() async {
+    // ...
+    
+    var channel = channelResolved()!;
+    var result = await channel.sendAndWaitResponse<int, int>('some message');
+
+    // ...
+  }
+}
+
+```
+
+Outside communication with the task:
+```dart
+// ...
+
+var channel = (await task.channel())!;
+var msg = await channel.waitMessage();
+
+// process msg...
+
+channel.send('Some response');
+
+// ...
+```
+
+An `AsyncTaskChannel` is automatically closed when a task finishes (returns its result).
+
 ## Source
 
 The official source code is [hosted @ GitHub][github_async_task]:

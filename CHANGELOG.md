@@ -1,8 +1,9 @@
 ## 1.0.6
 
-- Added `AsyncTaskChannel`.
+- Added `AsyncTaskChannel` for messages communication with tasks during execution.
 - Added `AsyncExecutorStatus`.
 - `AsyncExecutor`: optimize to avoid creating of futures while executing/processing a task.
+- Improved README. 
 
 ## 1.0.5
 

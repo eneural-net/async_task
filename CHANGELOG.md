@@ -1,3 +1,8 @@
+## 1.0.8
+
+- Fix isolate message of a task without `SharedData`.
+- Improved tests scenarios.
+
 ## 1.0.7
 
 - Small fix in README.

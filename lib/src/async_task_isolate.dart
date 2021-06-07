@@ -748,7 +748,7 @@ class _Isolate {
       dynamic parameters,
       List message,
       SendPort replyPort) {
-    if (message.length > 2) {
+    if (message.length > 6) {
       var sentAllSharedData = message[6] as bool;
       var sharedDataMap = message[7] as Map<String, Object>;
 

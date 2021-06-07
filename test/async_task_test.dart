@@ -10,95 +10,131 @@ void main() {
     setUp(() {});
 
     test(
-      'sequential = false, parallelism = 0, withTaskChannel = false',
-      () => _testParallelism(false, 0, false),
+      'sequential = false, parallelism = 0, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(false, 0, true, false),
       //skip: true,
     );
 
     test(
-      'sequential = false, parallelism = 0, withTaskChannel = true',
-      () => _testParallelism(false, 0, true),
-      //skip: true,
-    );
-
-    // ----------------
-
-    test(
-      'sequential = true, parallelism = 0, withTaskChannel = false',
-      () => _testParallelism(true, 0, false),
+      'sequential = false, parallelism = 0, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(false, 0, true, true),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 0, withTaskChannel = true',
-      () => _testParallelism(true, 0, true),
-      //skip: true,
-    );
-
-    // ----------------
-
-    test(
-      'sequential = false, parallelism = 1, withTaskChannel = false',
-      () => _testParallelism(false, 1, false),
+      'sequential = false, parallelism = 0, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(false, 0, false, false),
       //skip: true,
     );
 
     test(
-      'sequential = false, parallelism = 1, withTaskChannel = true',
-      () => _testParallelism(false, 1, true),
+      'sequential = false, parallelism = 0, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(false, 0, false, true),
       //skip: true,
     );
 
     // ----------------
 
     test(
-      'sequential = true, parallelism = 1, withTaskChannel = false',
-      () => _testParallelism(true, 1, false),
+      'sequential = true, parallelism = 0, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(true, 0, true, false),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 1, withTaskChannel = true',
-      () => _testParallelism(true, 1, true),
-      //skip: true,
-    );
-
-    // ----------------
-
-    test(
-      'sequential = false, parallelism = 2, withTaskChannel = false',
-      () => _testParallelism(false, 2, false),
-      //skip: true,
-    );
-
-    test(
-      'sequential = false, parallelism = 2, withTaskChannel = true',
-      () => _testParallelism(false, 2, true),
+      'sequential = true, parallelism = 0, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(true, 0, true, true),
       //skip: true,
     );
 
     // ----------------
 
     test(
-      'sequential = true, parallelism = 2, withTaskChannel = false',
-      () => _testParallelism(true, 2, false),
+      'sequential = false, parallelism = 1, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(false, 1, true, false),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 2, withTaskChannel = true',
-      () => _testParallelism(true, 2, true),
+      'sequential = false, parallelism = 1, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(false, 1, true, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = true, parallelism = 1, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(true, 1, true, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 1, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(true, 1, true, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = false, parallelism = 2, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(false, 2, true, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = false, parallelism = 2, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(false, 2, true, true),
+      //skip: true,
+    );
+
+    test(
+      'sequential = false, parallelism = 2, withSharedData = false, withTaskChannel = false',
+      () => _testParallelism(false, 2, false, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = false, parallelism = 2, withSharedData = false, withTaskChannel = true',
+      () => _testParallelism(false, 2, false, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = true, parallelism = 2, withSharedData = true, withTaskChannel = false',
+      () => _testParallelism(true, 2, true, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 2, withSharedData = true, withTaskChannel = true',
+      () => _testParallelism(true, 2, true, true),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 2, withSharedData = false, withTaskChannel = false',
+      () => _testParallelism(true, 2, false, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 2, withSharedData = false, withTaskChannel = true',
+      () => _testParallelism(true, 2, false, true),
       //skip: true,
     );
   });
 }
 
-Future<void> _testParallelism(
-    bool sequential, int parallelism, bool withTaskChannel) async {
+Future<void> _testParallelism(bool sequential, int parallelism,
+    bool withSharedData, bool withTaskChannel) async {
   print('====================================================================');
   var initTime = DateTime.now();
-  var executor =
-      await _testParallelismImpl(sequential, parallelism, withTaskChannel);
+  var executor = await _testParallelismImpl(
+      sequential, parallelism, withSharedData, withTaskChannel);
   var endTime = DateTime.now();
   var elapsedTime =
       endTime.millisecondsSinceEpoch - initTime.millisecondsSinceEpoch;
@@ -108,8 +144,8 @@ Future<void> _testParallelism(
   print('>> Test Time: $elapsedTime');
 }
 
-Future<AsyncExecutor> _testParallelismImpl(
-    bool sequential, int parallelism, bool withTaskChannel) async {
+Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
+    bool withSharedData, bool withTaskChannel) async {
   var executor = AsyncExecutor(
       sequential: sequential,
       parallelism: parallelism,
@@ -119,13 +155,17 @@ Future<AsyncExecutor> _testParallelismImpl(
   executor.logger.enabled = true;
   executor.logger.enabledExecution = true;
 
-  var counterStart = SharedData<int, int>(12000000);
-  var counterStartMultiplier = SharedData<int, int>(2);
+  var counterStartData = withSharedData ? SharedData<int, int>(12000000) : null;
+  var counterStartMultiplierData =
+      withSharedData ? SharedData<int, int>(2) : null;
+
+  var counterStart = counterStartData?.data ?? 1;
+  var counterStartMultiplier = counterStartMultiplierData?.data ?? 1;
 
   var counters = List<_Counter>.generate(
       10,
-      (i) => _Counter(
-          10, i + 1, counterStart, counterStartMultiplier, withTaskChannel));
+      (i) => _Counter(10, i + 1, counterStartData, counterStartMultiplierData,
+          withTaskChannel));
 
   var sharedDataInfo = AsyncExecutorSharedDataInfo();
   var executions =
@@ -155,7 +195,7 @@ Future<AsyncExecutor> _testParallelismImpl(
   var results = await Future.wait(executions);
 
   expect(sharedDataInfo.sentSharedDataSignatures.length,
-      equals(executor.platform.isNative ? 2 : 0));
+      equals(withSharedData && executor.platform.isNative ? 2 : 0));
 
   await executor.disposeSharedDataInfo(sharedDataInfo);
   print(sharedDataInfo);
@@ -167,7 +207,7 @@ Future<AsyncExecutor> _testParallelismImpl(
 
   print('Counters results: $results');
 
-  var start = counterStart.data * counterStartMultiplier.data;
+  var start = counterStart * counterStartMultiplier;
 
   for (var i = 0; i < counters.length; ++i) {
     var c = counters[i];
@@ -205,7 +245,7 @@ Future<AsyncExecutor> _testParallelismImpl(
   var error;
   try {
     var extraTask = _Counter(
-        10, 100, counterStart, counterStartMultiplier, withTaskChannel);
+        10, 100, counterStartData, counterStartMultiplierData, withTaskChannel);
     await executor.execute(extraTask);
   } catch (e) {
     error = e;
@@ -224,8 +264,8 @@ class _Counter extends AsyncTask<List<int>, int> {
 
   final int stepValue;
 
-  final SharedData<int, int> start;
-  final SharedData<int, int> startMultiplier;
+  final SharedData<int, int>? start;
+  final SharedData<int, int>? startMultiplier;
 
   final bool withTaskChannel;
 
@@ -238,13 +278,18 @@ class _Counter extends AsyncTask<List<int>, int> {
       _Counter(
           parameters[0],
           parameters[1],
-          sharedData!['start'] as SharedData<int, int>,
-          sharedData['startMultiplier'] as SharedData<int, int>,
+          sharedData?['start'] as SharedData<int, int>?,
+          sharedData?['startMultiplier'] as SharedData<int, int>?,
           parameters[2] == 1);
 
   @override
-  Map<String, SharedData> sharedData() =>
-      <String, SharedData>{'start': start, 'startMultiplier': startMultiplier};
+  Map<String, SharedData>? sharedData() {
+    var map = <String, SharedData>{
+      if (start != null) 'start': start!,
+      if (startMultiplier != null) 'startMultiplier': startMultiplier!
+    };
+    return map.isNotEmpty ? map : null;
+  }
 
   @override
   SharedData loadSharedData(String key, dynamic serial) {
@@ -267,7 +312,10 @@ class _Counter extends AsyncTask<List<int>, int> {
 
   @override
   FutureOr<int> run() async {
-    var count = start.data * startMultiplier.data;
+    var start = this.start?.data ?? 1;
+    var startMultiplier = this.startMultiplier?.data ?? 1;
+
+    var count = start * startMultiplier;
 
     print('$this <<< ...');
     for (var i = 0; i < total; ++i) {

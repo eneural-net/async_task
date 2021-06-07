@@ -1,3 +1,8 @@
+## 1.0.7
+
+- Small fix in README.
+- Small fix in example.
+
 ## 1.0.6
 
 - Added `AsyncTaskChannel` for messages communication with tasks during execution.

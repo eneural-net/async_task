@@ -7,7 +7,7 @@ void main() async {
   // A list of known primes, shared between tasks.
   // `SharedData` instances are handled in an efficient way,
   // since they are sent to threads/isolates only once, and not per task.
-  var knownPrimes = SharedData<List<int>, List<int>>([2, 3, 4, 5]);
+  var knownPrimes = SharedData<List<int>, List<int>>([2, 3, 5]);
 
   // The tasks to execute:
   var tasks = [

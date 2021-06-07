@@ -400,3 +400,25 @@ class SharedData<D, S> {
     _serial = null;
   }
 }
+
+/// Collects [SharedData] execution information.
+class AsyncExecutorSharedDataInfo {
+  Set<String> sentSharedDataSignatures = {};
+
+  Set<String> disposedSharedDataSignatures = {};
+
+  bool get isEmpty =>
+      sentSharedDataSignatures.isEmpty && disposedSharedDataSignatures.isEmpty;
+
+  @override
+  String toString() {
+    if (isEmpty) {
+      return 'AsyncExecutorSharedDataInfo{ empty }';
+    }
+
+    return 'AsyncExecutorSharedDataInfo{ '
+        'sent: $sentSharedDataSignatures'
+        ', disposed: $disposedSharedDataSignatures'
+        ' }';
+  }
+}

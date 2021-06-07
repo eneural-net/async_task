@@ -1,7 +1,8 @@
-@Timeout(Duration(seconds: 45))
+@Timeout(Duration(seconds: 450))
 import 'dart:async';
 
 import 'package:async_task/async_task.dart';
+import 'package:async_task/src/async_task_channel.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -9,59 +10,106 @@ void main() {
     setUp(() {});
 
     test(
-      'sequential = false, parallelism = 0',
-      () => _testParallelism(false, 0),
+      'sequential = false, parallelism = 0, withTaskChannel = false',
+      () => _testParallelism(false, 0, false),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 0',
-      () => _testParallelism(true, 0),
+      'sequential = false, parallelism = 0, withTaskChannel = true',
+      () => _testParallelism(false, 0, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = true, parallelism = 0, withTaskChannel = false',
+      () => _testParallelism(true, 0, false),
       //skip: true,
     );
 
     test(
-      'sequential = false, parallelism = 1',
-      () => _testParallelism(false, 1),
+      'sequential = true, parallelism = 0, withTaskChannel = true',
+      () => _testParallelism(true, 0, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = false, parallelism = 1, withTaskChannel = false',
+      () => _testParallelism(false, 1, false),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 1',
-      () => _testParallelism(true, 1),
+      'sequential = false, parallelism = 1, withTaskChannel = true',
+      () => _testParallelism(false, 1, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = true, parallelism = 1, withTaskChannel = false',
+      () => _testParallelism(true, 1, false),
       //skip: true,
     );
 
     test(
-      'sequential = false, parallelism = 2',
-      () => _testParallelism(false, 2),
+      'sequential = true, parallelism = 1, withTaskChannel = true',
+      () => _testParallelism(true, 1, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = false, parallelism = 2, withTaskChannel = false',
+      () => _testParallelism(false, 2, false),
       //skip: true,
     );
 
     test(
-      'sequential = true, parallelism = 2',
-      () => _testParallelism(true, 2),
+      'sequential = false, parallelism = 2, withTaskChannel = true',
+      () => _testParallelism(false, 2, true),
+      //skip: true,
+    );
+
+    // ----------------
+
+    test(
+      'sequential = true, parallelism = 2, withTaskChannel = false',
+      () => _testParallelism(true, 2, false),
+      //skip: true,
+    );
+
+    test(
+      'sequential = true, parallelism = 2, withTaskChannel = true',
+      () => _testParallelism(true, 2, true),
       //skip: true,
     );
   });
 }
 
-Future<void> _testParallelism(bool sequential, int parallelism) async {
+Future<void> _testParallelism(
+    bool sequential, int parallelism, bool withTaskChannel) async {
+  print('====================================================================');
   var initTime = DateTime.now();
-  var executor = await _testParallelismImpl(sequential, parallelism);
+  var executor =
+      await _testParallelismImpl(sequential, parallelism, withTaskChannel);
   var endTime = DateTime.now();
   var elapsedTime =
       endTime.millisecondsSinceEpoch - initTime.millisecondsSinceEpoch;
   print(executor);
   await executor.close();
 
-  print('Test Time: $elapsedTime');
+  print('>> Test Time: $elapsedTime');
 }
 
 Future<AsyncExecutor> _testParallelismImpl(
-    bool sequential, int parallelism) async {
-  print('====================================================================');
-
+    bool sequential, int parallelism, bool withTaskChannel) async {
   var executor = AsyncExecutor(
       sequential: sequential,
       parallelism: parallelism,
@@ -75,7 +123,9 @@ Future<AsyncExecutor> _testParallelismImpl(
   var counterStartMultiplier = SharedData<int, int>(2);
 
   var counters = List<_Counter>.generate(
-      10, (i) => _Counter(10, i + 1, counterStart, counterStartMultiplier));
+      10,
+      (i) => _Counter(
+          10, i + 1, counterStart, counterStartMultiplier, withTaskChannel));
 
   var sharedDataInfo = AsyncExecutorSharedDataInfo();
   var executions =
@@ -87,6 +137,19 @@ Future<AsyncExecutor> _testParallelismImpl(
     var c = counters[i];
     expect(c.isFinished, isFalse);
     expect(c.result, isNull);
+  }
+
+  if (withTaskChannel) {
+    counters.forEach((c) async {
+      var channel = (await c.channel())!;
+      var count = await channel.waitMessage();
+      channel.send(count * 3);
+    });
+  } else {
+    counters.forEach((c) async {
+      var channel = await c.channel();
+      expect(channel, isNull);
+    });
   }
 
   var results = await Future.wait(executions);
@@ -110,8 +173,13 @@ Future<AsyncExecutor> _testParallelismImpl(
     var c = counters[i];
     var n = results[i];
     expect(c.isFinished, isTrue);
-    expect(n, equals(start + c.total * c.stepValue));
+
+    var expectedResult = start + c.total * c.stepValue;
+    if (withTaskChannel) expectedResult = expectedResult * 3 * 2;
+
+    expect(n, equals(expectedResult));
     expect(n, equals(c.result));
+
     expect(c.executionTime!.inMilliseconds >= 100, isTrue);
   }
 
@@ -136,7 +204,8 @@ Future<AsyncExecutor> _testParallelismImpl(
 
   var error;
   try {
-    var extraTask = _Counter(10, 100, counterStart, counterStartMultiplier);
+    var extraTask = _Counter(
+        10, 100, counterStart, counterStartMultiplier, withTaskChannel);
     await executor.execute(extraTask);
   } catch (e) {
     error = e;
@@ -148,7 +217,7 @@ Future<AsyncExecutor> _testParallelismImpl(
 }
 
 List<AsyncTask> _taskRegister() =>
-    [_Counter(0, 0, SharedData<int, int>(0), SharedData<int, int>(0))];
+    [_Counter(0, 0, SharedData<int, int>(0), SharedData<int, int>(0), false)];
 
 class _Counter extends AsyncTask<List<int>, int> {
   final int total;
@@ -158,7 +227,10 @@ class _Counter extends AsyncTask<List<int>, int> {
   final SharedData<int, int> start;
   final SharedData<int, int> startMultiplier;
 
-  _Counter(this.total, this.stepValue, this.start, this.startMultiplier);
+  final bool withTaskChannel;
+
+  _Counter(this.total, this.stepValue, this.start, this.startMultiplier,
+      this.withTaskChannel);
 
   @override
   AsyncTask<List<int>, int> instantiate(List<int> parameters,
@@ -167,7 +239,8 @@ class _Counter extends AsyncTask<List<int>, int> {
           parameters[0],
           parameters[1],
           sharedData!['start'] as SharedData<int, int>,
-          sharedData['startMultiplier'] as SharedData<int, int>);
+          sharedData['startMultiplier'] as SharedData<int, int>,
+          parameters[2] == 1);
 
   @override
   Map<String, SharedData> sharedData() =>
@@ -186,7 +259,11 @@ class _Counter extends AsyncTask<List<int>, int> {
   }
 
   @override
-  List<int> parameters() => <int>[total, stepValue];
+  List<int> parameters() => [total, stepValue, withTaskChannel ? 1 : 0];
+
+  @override
+  AsyncTaskChannel? channelInstantiator() =>
+      withTaskChannel ? AsyncTaskChannel() : null;
 
   @override
   FutureOr<int> run() async {
@@ -198,9 +275,28 @@ class _Counter extends AsyncTask<List<int>, int> {
       count += stepValue;
       await Future.delayed(Duration(milliseconds: 10));
     }
-    print('$this >>> $count');
 
-    return count;
+    print('$this --- count: $count');
+
+    if (withTaskChannel) {
+      var channel = channelResolved()!;
+
+      var result = await channel.sendAndWaitResponse<int, int>(count);
+
+      print('$this --- received result: $count -> $result');
+
+      var result2 = result * 2;
+
+      print('$this >>> final result: $count -> $result -> $result2\t $channel');
+      return result2;
+    } else {
+      var channel = this.channel();
+      if (channel != null) {
+        throw StateError('Channel should be null: $channel');
+      }
+      print('$this >>> final result: $count');
+      return count;
+    }
   }
 
   @override

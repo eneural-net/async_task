@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:async_task/src/async_task_channel.dart';
 import 'package:collection/collection.dart';
 
 import 'async_task_generic.dart'
@@ -34,6 +35,11 @@ class AsyncTaskPlatform {
 
   /// Returns `true` if is a generic platform.
   bool get isGeneric => platformType == AsyncTaskPlatformType.generic;
+
+  @override
+  String toString() {
+    return 'AsyncTaskPlatform{platformType: $platformType, maximumParallelism: $maximumParallelism}';
+  }
 }
 
 /// Base class for tasks implementation.
@@ -192,6 +198,55 @@ abstract class AsyncTask<P, R> {
   /// Computes/runs this task.
   FutureOr<R> run();
 
+  AsyncExecutorThread? _executorThread;
+
+  AsyncExecutorThread? get executorThread => _executorThread;
+
+  /// if `true`, indicates that the current context is inside [AsyncTask.run].
+  bool get isInExecutionContext {
+    var executorThread = _executorThread;
+    return executorThread != null
+        ? executorThread.isInExecutionContext(this)
+        : false;
+  }
+
+  AsyncTaskChannel? _channelInstance;
+
+  bool _channelResolved = false;
+
+  Completer<AsyncTaskChannel?>? _waitingChannelToResolve;
+
+  /// Returns an optional [AsyncTaskChannel] for communication with the task.
+  FutureOr<AsyncTaskChannel?> channel() {
+    if (_channelResolved) return _channelInstance;
+    var waitingChannelToResolve = _waitingChannelToResolve;
+    waitingChannelToResolve ??= _waitingChannelToResolve = Completer();
+    return waitingChannelToResolve.future;
+  }
+
+  /// Returns an optional [AsyncTaskChannel]. If not resolved yet will return null.
+  AsyncTaskChannel? channelResolved() {
+    if (_channelResolved) return _channelInstance;
+    return null;
+  }
+
+  /// Resolves the channel instance. Called by [AsyncExecutor] when executing this task.
+  AsyncTaskChannel? resolveChannel(
+      void Function(AsyncTask task, AsyncTaskChannel? channel) initializer) {
+    if (_channelResolved) return _channelInstance;
+    var channel = _channelInstance = channelInstantiator();
+    initializer(this, channel);
+    _channelResolved = true;
+    var waitingChannelToResolve = _waitingChannelToResolve;
+    if (waitingChannelToResolve != null) {
+      waitingChannelToResolve.complete(channel);
+    }
+    return channel;
+  }
+
+  /// Instantiate the optional [AsyncTaskChannel] return by [channel].
+  AsyncTaskChannel? channelInstantiator() => null;
+
   /// Resets this task to it's initial state, before any execution.
   void reset() {
     _finished = false;
@@ -302,6 +357,14 @@ class AsyncTaskLoggerCaller {
 }
 
 typedef AsyncTaskRegister = FutureOr<List<AsyncTask>> Function();
+
+enum AsyncExecutorStatus {
+  idle,
+  started,
+  ready,
+  closing,
+  closed,
+}
 
 /// Asynchronous Executor of [AsyncTask].
 class AsyncExecutor {
@@ -483,7 +546,7 @@ class AsyncExecutor {
   bool get isClosing => _closing != null;
 
   /// Returns `true` if this executor is ready to receive tasks to execute.
-  bool get isReady => !isClosed && !isClosing;
+  bool get isReady => _started && !isClosed && !isClosing;
 
   /// Closes this executor.
   Future<bool> close() async {
@@ -503,30 +566,29 @@ class AsyncExecutor {
     return closing.future;
   }
 
-  @override
-  String toString() {
-    return 'AsyncExecutor{ sequential: $sequential, parallelism: $parallelism, executorThread: $_executorThread }';
-  }
-}
-
-/// Collects [SharedData] execution information.
-class AsyncExecutorSharedDataInfo {
-  Set<String> sentSharedDataSignatures = {};
-
-  Set<String> disposedSharedDataSignatures = {};
-
-  bool get isEmpty =>
-      sentSharedDataSignatures.isEmpty && disposedSharedDataSignatures.isEmpty;
-
-  @override
-  String toString() {
-    if (isEmpty) {
-      return 'AsyncExecutorSharedDataInfo{ empty }';
+  AsyncExecutorStatus get status {
+    if (isReady) {
+      return AsyncExecutorStatus.ready;
+    } else if (isClosed) {
+      return AsyncExecutorStatus.closed;
+    } else if (isClosing) {
+      return AsyncExecutorStatus.closing;
+    } else if (isStarted) {
+      return AsyncExecutorStatus.started;
+    } else {
+      return AsyncExecutorStatus.idle;
     }
+  }
 
-    return 'AsyncExecutorSharedDataInfo{ '
-        'sent: $sentSharedDataSignatures'
-        ', disposed: $disposedSharedDataSignatures'
+  @override
+  String toString() {
+    return 'AsyncExecutor{'
+        ' sequential: $sequential,'
+        ' parallelism: $parallelism,'
+        ' maximumWorkers: $maximumWorkers,'
+        ' status: $status,'
+        ' platform: $platform,'
+        ' executorThread: $_executorThread'
         ' }';
   }
 }
@@ -544,6 +606,13 @@ abstract class AsyncExecutorThread {
 
   /// Starts this thread.
   FutureOr<bool> start();
+
+  void bindTask(AsyncTask task) {
+    task._executorThread = this;
+  }
+
+  /// if `true`, indicates that the current context is inside [AsyncTask.run].
+  bool isInExecutionContext(AsyncTask task);
 
   /// Executes [task] in this thread.
   Future<R> execute<P, R>(AsyncTask<P, R> task,
@@ -568,6 +637,11 @@ abstract class AsyncExecutorThread {
       AsyncTask<P, R> task, DateTime? initTime, DateTime? endTime, R result,
       [dynamic error, StackTrace? stackTrace]) {
     if (!task.isFinished) {
+      var taskChannel = task._channelInstance;
+      if (taskChannel != null) {
+        taskChannel.close();
+      }
+
       if (error != null) {
         task._finishError(error, stackTrace,
             initTime: initTime, endTime: endTime);
@@ -596,8 +670,33 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   @override
   int get maximumWorkers => 1;
 
+  Zone? _zone;
+
+  bool _started = false;
+
   @override
-  FutureOr<bool> start() => true;
+  FutureOr<bool> start() {
+    if (_started) return true;
+    _started = true;
+
+    _zone = Zone.current.fork();
+    return true;
+  }
+
+  @override
+  bool isInExecutionContext(AsyncTask task) {
+    if (task.executorThread != this) {
+      throw StateError('Task not from this $this: $task');
+    }
+
+    var myZone = _zone;
+    if (myZone == null) return false;
+
+    var currentZone = Zone.current;
+    var executingContext = identical(myZone, currentZone);
+
+    return executingContext;
+  }
 
   final QueueList<AsyncTask> _queue = QueueList<AsyncTask>(32);
   AsyncTask? _executing;
@@ -605,12 +704,19 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   @override
   Future<R> execute<P, R>(AsyncTask<P, R> task,
       {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+    bindTask(task);
+
+    task.resolveChannel((t, c) {
+      if (c != null) {
+        c.initialize(t, _AsyncTaskChannelPortLocal(c));
+      }
+    });
+
     if (sequential) {
       if (_executing == null) {
         _executing = task;
 
-        // ignore: unawaited_futures
-        Future.microtask(() async {
+        _zone!.scheduleMicrotask(() async {
           logger.logExecution('Executing task', this, task);
           await task.execute();
           assert(identical(_executing, task));
@@ -621,10 +727,9 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         _queue.add(task);
       }
     } else {
-      // ignore: unawaited_futures
-      Future.microtask(() {
+      _zone!.scheduleMicrotask(() {
         logger.logExecution('Executing task', this, task);
-        return task.execute();
+        task.execute();
       });
     }
 
@@ -636,8 +741,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
       var task = _queue.removeFirst();
       _executing = task;
 
-      // ignore: unawaited_futures
-      Future.microtask(() async {
+      Zone.current.scheduleMicrotask(() async {
         await task.execute();
         assert(identical(_executing, task));
         _executing = null;
@@ -662,6 +766,15 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   @override
   String toString() {
     return '_AsyncExecutorSingleThread';
+  }
+}
+
+class _AsyncTaskChannelPortLocal extends AsyncTaskChannelPort {
+  _AsyncTaskChannelPortLocal(AsyncTaskChannel channel) : super(channel);
+
+  @override
+  void send<M>(M message, bool inExecutingContext) {
+    onReceiveMessage(message, inExecutingContext);
   }
 }
 

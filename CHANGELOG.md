@@ -1,9 +1,15 @@
+## 1.0.6
+
+- Added `AsyncTaskChannel`.
+- Added `AsyncExecutorStatus`.
+- `AsyncExecutor`: optimize to avoid creating of futures while executing/processing a task.
+
 ## 1.0.5
 
 - Added `AsyncTaskPlatform` and `AsyncTaskPlatformType`.
 - `AsyncTask`:
   - Optimize `taskType`
-  - Optimize `execute` to use less `asyn` operations.
+  - Optimize `execute` to use less `async` operations.
 - Added `AsyncExecutorSharedDataInfo` to report `SharedData` information.
 - `AsyncExecutor`:
   - New constructor parameter `parallelismPercentage`. 
@@ -12,7 +18,7 @@
 - Extensions:
   - Added `IterableFutureOrExtension` and `IterableFutureExtension`.
 - `_AsyncExecutorMultiThread`:
-  - Optimized to use less `asyn` operations.
+  - Optimized to use less `async` operations.
   - Using `_RawReceivePortPool` to optimize ports.
   - Optimized to pre send `SharedData`.
 - Added `_RawReceivePortPool`: pool of reusable `_ReceivePort`.

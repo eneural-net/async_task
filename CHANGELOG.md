@@ -1,3 +1,9 @@
+## 1.0.9-dev
+
+- `README.md`:
+  - Fix type.
+  - Improve channel usage description.
+
 ## 1.0.8
 
 - Fix isolate message of a task without `SharedData`.

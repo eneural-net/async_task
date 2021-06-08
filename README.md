@@ -204,7 +204,7 @@ class PrimeChecker extends AsyncTask<int, bool> {
 ```
 
 The field `knownPrimes` above will be shared between tasks. In platforms with support
-for [dart:isolate][dart_isolate] `knownPrimes` will be sent through a [Isolate] port only once,
+for [dart:isolate][dart_isolate] `knownPrimes` will be sent through an [Isolate] port only once,
 avoiding multiple copies and unnecessary memory allocations.
 
 ## AsyncTaskChannel
@@ -220,7 +220,7 @@ class YourTask extends AsyncTask<String, int> {
   // ...
   
   @override
-  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel();
+  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel(); // You can extend `AsyncTaskChannel` class if needed.
 
   // ...
 
@@ -228,7 +228,7 @@ class YourTask extends AsyncTask<String, int> {
   FutureOr<int> run() async {
     // ...
     
-    var channel = channelResolved()!;
+    var channel = channelResolved()!; // The channel is always resolved inside `run()`.
     var result = await channel.sendAndWaitResponse<String, String>('some message');
 
     // ...
@@ -241,11 +241,20 @@ Outside communication with the task:
 ```dart
 // ...
 
+// Execute the task:
+asyncExecutor.execute(task);
+
+// ...
+
+// Wait for the channel to be resolved:
 var channel = (await task.channel())!;
+
+// Wait for a message:
 var msg = await channel.waitMessage();
 
 // process msg...
 
+// Send a response:
 channel.send('Some response');
 
 // ...

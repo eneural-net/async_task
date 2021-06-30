@@ -89,9 +89,10 @@ extension ListExtension<T> on List<T> {
 
   Type get genericType => T;
 
-  List<T> copy() => List.from(this);
+  List<T> copy() => List<T>.from(this);
 
-  List<T> deepCopy() => List.from(map(SerializableData.copyGeneric));
+  List<T> deepCopy() =>
+      map<T>((T e) => SerializableData.copyGeneric<T>(e)).toList();
 
   bool deepEquals(List<T> other) => _equality.equals(this, other);
 

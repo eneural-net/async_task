@@ -1,3 +1,7 @@
+## 1.0.10-dev
+
+- Improve tests.
+
 ## 1.0.9
 
 - Ensure that all ports are closed after close executors.

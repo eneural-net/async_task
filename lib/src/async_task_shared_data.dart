@@ -56,10 +56,10 @@ abstract class SerializableData<D, S> {
       return 'map>$h';
     } else if (data is Set) {
       var h = data.computeHashcode();
-      return 'map>$h';
+      return 'set>$h';
     } else if (data is Iterable) {
       var h = data.computeHashcode();
-      return 'map>$h';
+      return 'iter>$h';
     } else {
       var h = data.hashCode;
       return 'obj:$h';

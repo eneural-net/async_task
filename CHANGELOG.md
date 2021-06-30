@@ -1,3 +1,8 @@
+## 1.0.11
+
+- Improve tests.
+- Only export `async_extension` on library `async_task_extension.dart`.
+
 ## 1.0.10
 
 - Optimize `async` methods with `async_extension`.

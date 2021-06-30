@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:async_task/async_task.dart';
+import 'package:async_task/async_task_extension.dart';
 import 'package:async_task/src/async_task_channel.dart';
 import 'package:test/test.dart';
 
@@ -167,6 +168,19 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
       (i) => _Counter(10, i + 1, counterStartData, counterStartMultiplierData,
           withTaskChannel));
 
+  expect(counters.hasIdleTask, isTrue);
+  expect(counters.hasTaskWithError, isFalse);
+  expect(counters.allTasksSubmitted, isFalse);
+  expect(counters.allTasksFinished, isFalse);
+  expect(counters.allTasksSuccessful, isFalse);
+
+  expect(counters.idleTasks.length, equals(counters.length));
+  expect(counters.submittedTasks.length, equals(0));
+  expect(counters.finishedTasks.length, equals(0));
+  expect(counters.notFinishedTasks.length, equals(counters.length));
+  expect(counters.successfulTasks.length, equals(0));
+  expect(counters.errorTasks.length, equals(0));
+
   var sharedDataInfo = AsyncExecutorSharedDataInfo();
   var executions =
       executor.executeAll(counters, sharedDataInfo: sharedDataInfo);
@@ -193,6 +207,19 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   }
 
   var results = await Future.wait(executions);
+
+  expect(counters.hasIdleTask, isFalse);
+  expect(counters.hasTaskWithError, isFalse);
+  expect(counters.allTasksSubmitted, isTrue);
+  expect(counters.allTasksFinished, isTrue);
+  expect(counters.allTasksSuccessful, isTrue);
+
+  expect(counters.idleTasks.length, equals(0));
+  expect(counters.submittedTasks.length, equals(counters.length));
+  expect(counters.finishedTasks.length, equals(counters.length));
+  expect(counters.notFinishedTasks.length, equals(0));
+  expect(counters.successfulTasks.length, equals(counters.length));
+  expect(counters.errorTasks.length, equals(0));
 
   expect(sharedDataInfo.sentSharedDataSignatures.length,
       equals(withSharedData && executor.platform.isNative ? 2 : 0));

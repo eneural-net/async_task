@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:async_extension/async_extension.dart';
 import 'package:async_task/src/async_task_channel.dart';
 import 'package:collection/collection.dart';
 
@@ -476,15 +477,16 @@ class AsyncExecutor {
   }
 
   Future<R> _executeNotStarted<P, R>(AsyncTask<P, R> task,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo}) async {
-    await start();
-    return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
+      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+    return start().then((_) {
+      return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
+    });
   }
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
-  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+  FutureOr<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
           {bool async = false}) =>
       _executorThread.disposeSharedData(sharedDataSignatures, async: async);
 
@@ -492,7 +494,7 @@ class AsyncExecutor {
   ///
   /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
   ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
-  Future<bool> disposeSharedDataInfo<P, R>(
+  FutureOr<bool> disposeSharedDataInfo<P, R>(
           AsyncExecutorSharedDataInfo sharedDataInfo,
           {bool async = false}) =>
       _executorThread.disposeSharedDataInfo(sharedDataInfo, async: async);
@@ -531,7 +533,7 @@ class AsyncExecutor {
       return results;
     } else {
       var executions = executeAll(tasks, sharedDataInfo: sharedDataInfo);
-      return await Future.wait(executions);
+      return Future.wait(executions);
     }
   }
 
@@ -621,14 +623,14 @@ abstract class AsyncExecutorThread {
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
-  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+  FutureOr<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
       {bool async = false});
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
   ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
-  Future<bool> disposeSharedDataInfo<P, R>(
+  FutureOr<bool> disposeSharedDataInfo<P, R>(
       AsyncExecutorSharedDataInfo sharedDataInfo,
       {bool async = false});
 
@@ -741,27 +743,25 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
       var task = _queue.removeFirst();
       _executing = task;
 
-      Zone.current.scheduleMicrotask(() async {
-        await task.execute();
-        assert(identical(_executing, task));
-        _executing = null;
-        _consumeQueue();
+      Zone.current.scheduleMicrotask(() {
+        task.execute().resolveMapped((val) {
+          assert(identical(_executing, task));
+          _executing = null;
+          _consumeQueue();
+        });
       });
     }
   }
 
   @override
-  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
-      {bool async = false}) {
-    return Future.value(true);
-  }
+  bool disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+          {bool async = false}) =>
+      true;
 
   @override
-  Future<bool> disposeSharedDataInfo<P, R>(
-      AsyncExecutorSharedDataInfo sharedDataInfo,
-      {bool async = false}) {
-    return Future.value(true);
-  }
+  bool disposeSharedDataInfo<P, R>(AsyncExecutorSharedDataInfo sharedDataInfo,
+          {bool async = false}) =>
+      true;
 
   @override
   String toString() {

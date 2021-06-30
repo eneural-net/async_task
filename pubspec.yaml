@@ -8,7 +8,7 @@ environment:
 
 dependencies:
   collection: ^1.15.0
-  async_extension: ^1.0.3
+  async_extension: ^1.0.4
 
 dev_dependencies:
   pedantic: ^1.11.0

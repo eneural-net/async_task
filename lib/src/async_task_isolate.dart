@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:async_extension/async_extension.dart';
 import 'package:collection/collection.dart';
 
 import 'async_task_base.dart';
@@ -192,9 +193,9 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
     }
   }
 
-  void _dispatchTask<P, R>(_TaskWrapper<P, R> taskWrapper) async {
-    var thread = await _catchThread();
-    thread.submit(taskWrapper, this);
+  void _dispatchTask<P, R>(_TaskWrapper<P, R> taskWrapper) {
+    var thread = _catchThread();
+    thread.onResolve((t) => t.submit(taskWrapper, this));
   }
 
   void _dispatchTaskWithThread<P, R>(
@@ -235,15 +236,15 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   }
 
   @override
-  Future<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
+  FutureOr<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
       {bool async = false}) {
-    if (sharedDataSignatures.isEmpty) return Future.value(true);
+    if (sharedDataSignatures.isEmpty) return true;
 
     if (async) {
       for (var t in _threads) {
         t._disposeSharedDataAsync(sharedDataSignatures);
       }
-      return Future.value(true);
+      return true;
     } else {
       return Future.wait(
               _threads.map((e) => e._disposeSharedData(sharedDataSignatures)))
@@ -252,17 +253,17 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   }
 
   @override
-  Future<bool> disposeSharedDataInfo<P, R>(
+  FutureOr<bool> disposeSharedDataInfo<P, R>(
       AsyncExecutorSharedDataInfo sharedDataInfo,
       {bool async = false}) {
     var sharedDataSignatures = sharedDataInfo.sentSharedDataSignatures;
-    if (sharedDataSignatures.isEmpty) return Future.value(true);
+    if (sharedDataSignatures.isEmpty) return true;
 
     if (async) {
       for (var t in _threads) {
         t._disposeSharedDataAsync(sharedDataSignatures);
       }
-      return Future.value(true);
+      return true;
     } else {
       return Future.wait(
               _threads.map((e) => e._disposeSharedData(sharedDataSignatures)))

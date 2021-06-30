@@ -1,6 +1,8 @@
-## 1.0.10-dev
+## 1.0.10
 
+- Optimize `async` methods with `async_extension`.
 - Improve tests.
+- async_extension: ^1.0.4
 
 ## 1.0.9
 

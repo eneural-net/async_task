@@ -1,9 +1,13 @@
-## 1.0.9-dev
+## 1.0.9
 
+- Ensure that all ports are closed after close executors.
 - `README.md`:
-  - Fix type.
+  - Fix typo.
   - Improve channel usage description.
-
+- Move `IterableFutureOrExtension` and `IterableFutureExtension` to
+  package `async_extension`.
+  - async_extension: ^1.0.3
+  
 ## 1.0.8
 
 - Fix isolate message of a task without `SharedData`.

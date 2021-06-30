@@ -2,8 +2,6 @@
 
 [![pub package](https://img.shields.io/pub/v/async_task.svg?logo=dart&logoColor=00b9fc)](https://pub.dev/packages/async_task)
 [![Null Safety](https://img.shields.io/badge/null-safety-brightgreen)](https://dart.dev/null-safety)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Feneural-net%2Fasync_task.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Feneural-net%2Fasync_task?ref=badge_shield)
-
 [![CI](https://img.shields.io/github/workflow/status/eneural-net/async_task/Dart%20CI/master?logo=github-actions&logoColor=white)](https://github.com/eneural-net/async_task/actions)
 [![GitHub Tag](https://img.shields.io/github/v/tag/eneural-net/async_task?logo=git&logoColor=white)](https://github.com/eneural-net/async_task/releases)
 [![New Commits](https://img.shields.io/github/commits-since/eneural-net/async_task/latest?logo=git&logoColor=white)](https://github.com/eneural-net/async_task/network)
@@ -11,6 +9,7 @@
 [![Pull Requests](https://img.shields.io/github/issues-pr/eneural-net/async_task?logo=github&logoColor=white)](https://github.com/eneural-net/async_task/pulls)
 [![Code size](https://img.shields.io/github/languages/code-size/eneural-net/async_task?logo=github&logoColor=white)](https://github.com/eneural-net/async_task)
 [![License](https://img.shields.io/github/license/eneural-net/async_task?logo=open-source-initiative&logoColor=green)](https://github.com/eneural-net/async_task/blob/master/LICENSE)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Feneural-net%2Fasync_task.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Feneural-net%2Fasync_task?ref=badge_shield)
 
 This package brings asynchronous tasks and parallel executors (similar to classic thread pools) for all Dart platforms
 (JS/Web, Flutter, VM/Native) through transparent internal implementations, based on [dart:isolate][dart_isolate] or
@@ -291,6 +290,8 @@ Any help from the open-source community is always welcome and needed:
 - Have you already helped in any way?
     - **Many thanks from me, the contributors and everybody that uses this project!**
 
+*If you donate 1 hour of your time, you can contribute a lot,
+because others will do the same, just be part and start with your 1 hour.*
 
 [tracker]: https://github.com/eneural-net/async_task/issues
 

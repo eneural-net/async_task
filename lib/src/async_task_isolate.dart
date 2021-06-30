@@ -310,6 +310,8 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
     _threads.clear();
 
+    _receivePortPool.close();
+
     _closed = true;
     closing.complete(true);
 
@@ -697,6 +699,7 @@ class _Isolate {
           _onClose();
           replyPort.send(true);
           Zone.current.scheduleMicrotask(() {
+            _port.close();
             Isolate.current.kill();
           });
           break;

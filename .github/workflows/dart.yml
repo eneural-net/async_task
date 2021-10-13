@@ -30,8 +30,13 @@ jobs:
         run: dart run dependency_validator
       - name: Run tests
         run: dart test
+      - name: dartdoc
+        run: dartdoc --no-generate-docs
       - name: Generate coverage report
-        run: dart run test_cov
+        run: |
+          dart pub global activate coverage
+          dart run test --coverage=./coverage
+          dart pub global run coverage:format_coverage --packages=.packages --report-on=lib --lcov -o ./coverage/lcov.info -i ./coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

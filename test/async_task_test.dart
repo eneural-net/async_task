@@ -194,12 +194,14 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   }
 
   if (withTaskChannel) {
+    // ignore: avoid_function_literals_in_foreach_calls
     counters.forEach((c) async {
       var channel = (await c.channel())!;
       var count = await channel.waitMessage();
       channel.send(count * 3);
     });
   } else {
+    // ignore: avoid_function_literals_in_foreach_calls
     counters.forEach((c) async {
       var channel = await c.channel();
       expect(channel, isNull);
@@ -269,7 +271,7 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
 
   await executor.close();
 
-  var error;
+  Object? error;
   try {
     var extraTask = _Counter(
         10, 100, counterStartData, counterStartMultiplierData, withTaskChannel);

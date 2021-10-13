@@ -128,8 +128,8 @@ abstract class AsyncTaskChannelPort {
       messageQueue = _messageQueue;
       readQueue = _readQueue;
     } else {
-      messageQueue = _messageQueue_executingContext;
-      readQueue = _readQueue_executingContext;
+      messageQueue = _messageQueueExecutingContext;
+      readQueue = _readQueueExecutingContext;
     }
 
     if (readQueue.isNotEmpty) {
@@ -142,12 +142,12 @@ abstract class AsyncTaskChannelPort {
 
   final QueueList<dynamic> _messageQueue = QueueList<dynamic>(32);
 
-  final QueueList<dynamic> _messageQueue_executingContext =
+  final QueueList<dynamic> _messageQueueExecutingContext =
       QueueList<dynamic>(32);
 
   final QueueList<Completer> _readQueue = QueueList<Completer>(32);
 
-  final QueueList<Completer> _readQueue_executingContext =
+  final QueueList<Completer> _readQueueExecutingContext =
       QueueList<Completer>(32);
 
   /// Reads a message.
@@ -158,8 +158,8 @@ abstract class AsyncTaskChannelPort {
     QueueList<Completer> readQueue;
 
     if (inExecutingContext) {
-      messageQueue = _messageQueue_executingContext;
-      readQueue = _readQueue_executingContext;
+      messageQueue = _messageQueueExecutingContext;
+      readQueue = _readQueueExecutingContext;
     } else {
       messageQueue = _messageQueue;
       readQueue = _readQueue;

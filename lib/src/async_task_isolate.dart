@@ -401,7 +401,7 @@ class _AsyncTaskChannelPortIsolate extends AsyncTaskChannelPort {
 class _IsolateThread {
   static int _idCounter = 0;
 
-  final id;
+  final int id;
 
   final AsyncTaskRegister _taskRegister;
 
@@ -442,7 +442,7 @@ class _IsolateThread {
     var receivePort =
         _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
 
-    await Isolate.spawn(_Isolate._asyncTaskExecutor_Isolate_main,
+    await Isolate.spawn(_Isolate._asyncTaskExecutorIsolateMain,
         [id, receivePort.sendPort, _taskRegister]);
     var ret = await completer.future;
 
@@ -655,7 +655,7 @@ class _IsolateThread {
 class _Isolate {
   // Use an extended name for the Isolate entrypoint to be easily visible
   // in the Observatory and debugging tools.
-  static void _asyncTaskExecutor_Isolate_main(List initMessage) async {
+  static void _asyncTaskExecutorIsolateMain(List initMessage) async {
     var thID = initMessage[0];
     SendPort sendPort = initMessage[1];
     AsyncTaskRegister taskRegister = initMessage[2];
@@ -757,7 +757,7 @@ class _Isolate {
       var sharedDataMap = message[7] as Map<String, Object>;
 
       if (sentAllSharedData) {
-        _processTask_withPreSentSharedData(
+        _processTaskWithPreSentSharedData(
           thID,
           taskType,
           submitTime,
@@ -768,7 +768,7 @@ class _Isolate {
           replyPort,
         );
       } else {
-        _processTask_withSharedDataToResolve(
+        _processTaskWithSharedDataToResolve(
           thID,
           taskType,
           submitTime,
@@ -780,12 +780,12 @@ class _Isolate {
         );
       }
     } else {
-      _processTask_execute(thID, taskType, submitTime, taskChannelReceivePort,
+      _processTaskExecute(thID, taskType, submitTime, taskChannelReceivePort,
           taskChannelSendPort, parameters, null, replyPort);
     }
   }
 
-  void _processTask_withPreSentSharedData(
+  void _processTaskWithPreSentSharedData(
       int thID,
       String taskType,
       DateTime submitTime,
@@ -804,7 +804,7 @@ class _Isolate {
       return MapEntry(k, sharedData);
     });
 
-    _processTask_execute(thID, taskType, submitTime, taskChannelReceivePort,
+    _processTaskExecute(thID, taskType, submitTime, taskChannelReceivePort,
         taskChannelSendPort, parameters, sharedDataMapResolved, replyPort);
   }
 
@@ -816,7 +816,7 @@ class _Isolate {
     return taskRegistered;
   }
 
-  void _processTask_withSharedDataToResolve(
+  void _processTaskWithSharedDataToResolve(
       int thID,
       String taskType,
       DateTime submitTime,
@@ -833,7 +833,7 @@ class _Isolate {
     }
 
     if (needToRequestSharedData) {
-      _processTask_resolveRemoteSharedData(
+      _processTaskResolveRemoteSharedData(
           thID,
           taskType,
           submitTime,
@@ -843,7 +843,7 @@ class _Isolate {
           sharedDataMap,
           replyPort);
     } else {
-      _processTask_resolveLocalSharedData(
+      _processTaskResolveLocalSharedData(
           thID,
           taskType,
           submitTime,
@@ -855,7 +855,7 @@ class _Isolate {
     }
   }
 
-  void _processTask_resolveLocalSharedData(
+  void _processTaskResolveLocalSharedData(
       int thID,
       String taskType,
       DateTime submitTime,
@@ -879,11 +879,11 @@ class _Isolate {
       }
     });
 
-    _processTask_execute(thID, taskType, submitTime, taskChannelReceivePort,
+    _processTaskExecute(thID, taskType, submitTime, taskChannelReceivePort,
         taskChannelSendPort, parameters, sharedDataMapResolved, replyPort);
   }
 
-  void _processTask_resolveRemoteSharedData(
+  void _processTaskResolveRemoteSharedData(
       int thID,
       String taskType,
       DateTime submitTime,
@@ -898,11 +898,11 @@ class _Isolate {
     var sharedDataMapResolved = ret.key;
     replyPort = ret.value;
 
-    _processTask_execute(thID, taskType, submitTime, taskChannelReceivePort,
+    _processTaskExecute(thID, taskType, submitTime, taskChannelReceivePort,
         taskChannelSendPort, parameters, sharedDataMapResolved, replyPort);
   }
 
-  void _processTask_execute(
+  void _processTaskExecute(
       int thID,
       String taskType,
       DateTime submitTime,
@@ -934,19 +934,19 @@ class _Isolate {
         // ignore: unawaited_futures
         ret.then((_) {
           var result = task.result;
-          _processTask_replyResult(task, result, replyPort);
+          _processTaskReplyResult(task, result, replyPort);
         }, onError: (e, s) {
-          _processTask_replyError(task, e, s, replyPort);
+          _processTaskReplyError(task, e, s, replyPort);
         });
       } else {
-        _processTask_replyResult(task, ret, replyPort);
+        _processTaskReplyResult(task, ret, replyPort);
       }
     } catch (e, s) {
-      _processTask_replyError(instantiatedTask, e, s, replyPort);
+      _processTaskReplyError(instantiatedTask, e, s, replyPort);
     }
   }
 
-  void _processTask_replyResult(
+  void _processTaskReplyResult(
       AsyncTask<dynamic, dynamic> task, dynamic result, SendPort replyPort) {
     replyPort.send([
       true,
@@ -962,7 +962,7 @@ class _Isolate {
     }
   }
 
-  void _processTask_replyError(AsyncTask<dynamic, dynamic>? task, Object error,
+  void _processTaskReplyError(AsyncTask<dynamic, dynamic>? task, Object error,
       StackTrace s, SendPort replyPort) {
     var lines = '$s'.split(RegExp(r'[\r\n]'));
     if (lines.last.isEmpty) {

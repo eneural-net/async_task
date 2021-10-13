@@ -62,11 +62,11 @@ void main() {
     });
 
     test('copyGeneric', () {
-      var cp = <T>(T o) {
+      void cp<T>(T o) {
         var o2 = SerializableData.copyGeneric<T>(o);
         expect(o2, equals(o));
         expect('$o2', equals('$o'));
-      };
+      }
 
       cp(10);
       cp(10.0);

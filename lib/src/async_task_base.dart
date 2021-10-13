@@ -27,7 +27,7 @@ class AsyncTaskPlatform {
   final AsyncTaskPlatformType platformType;
 
   /// Maximum number of threads/isolates of the platform.
-  final maximumParallelism;
+  final int maximumParallelism;
 
   AsyncTaskPlatform(this.platformType, this.maximumParallelism);
 
@@ -302,8 +302,8 @@ AsyncExecutorThread createAsyncExecutorThread(
 typedef AsyncTaskLogger = void Function(String type, dynamic message,
     [dynamic error, dynamic stackTrace]);
 
-final AsyncTaskLogger DefaultAsyncTaskLogger =
-    (String type, dynamic message, [dynamic error, dynamic stackTrace]) {
+void defaultAsyncTaskLogger(String type, dynamic message,
+    [dynamic error, dynamic stackTrace]) {
   if (error != null) {
     if (message != null) {
       print('[$type] $message');
@@ -325,13 +325,13 @@ final AsyncTaskLogger DefaultAsyncTaskLogger =
   } else {
     print('[$type] $message');
   }
-};
+}
 
 class AsyncTaskLoggerCaller {
   final AsyncTaskLogger _logger;
 
   AsyncTaskLoggerCaller(AsyncTaskLogger? logger)
-      : _logger = logger ?? DefaultAsyncTaskLogger;
+      : _logger = logger ?? defaultAsyncTaskLogger;
 
   bool enabled = false;
 
@@ -404,13 +404,12 @@ class AsyncExecutor {
   late final AsyncTaskLoggerCaller _logger;
 
   AsyncExecutor(
-      {bool sequential = false,
+      {this.sequential = false,
       int? parallelism,
       double? parallelismPercentage,
       this.taskTypeRegister,
       AsyncTaskLogger? logger})
-      : sequential = sequential,
-        parallelism = parameterParallelism(
+      : parallelism = parameterParallelism(
             value: parallelism, byPercentage: parallelismPercentage),
         _executorThread = createAsyncExecutorThread(
             AsyncTaskLoggerCaller(logger),

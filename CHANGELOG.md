@@ -1,3 +1,11 @@
+## 1.0.12
+
+- Migrate from `pedantic` to `lints`.
+- Using Dart coverage.
+- async_extension: ^1.0.8
+- lints: ^1.0.1
+- coverage: ^1.0.3
+
 ## 1.0.11
 
 - Improve tests.

@@ -14,6 +14,10 @@ typedef AsyncTaskChannelMessageHandler = void Function(
 
 /// A message channel for a running [AsyncTask]
 class AsyncTaskChannel {
+  static int _idCount = 0;
+
+  final int id = ++_idCount;
+
   /// Optional handler that will receive all messages.
   final AsyncTaskChannelMessageHandler? _messageHandler;
 
@@ -57,12 +61,24 @@ class AsyncTaskChannel {
 
   /// Calls [send] and [waitMessage].
   Future<R> sendAndWaitResponse<M, R>(M message) {
-    send(message);
-    return waitMessage();
+    send<M>(message);
+    return waitMessage<R>();
   }
 
   /// Waits for a message to arrive and return it.
   Future<M> waitMessage<M>() => _port.read<M>(isInExecutionContext);
+
+  /// Reads a message if available in queue or return `null` (non-blocking).
+  M? readMessage<M>() => _port.readSync<M>(isInExecutionContext);
+
+  /// Returns the current message queue length.
+  int get messageQueueLength => _port.messageQueueLength(isInExecutionContext);
+
+  /// Returns `true` if the message queue is empty.
+  bool get messageQueueIsEmpty => messageQueueLength == 0;
+
+  /// Returns `true` if the message queue is NOT empty.
+  bool get messageQueueIsNotEmpty => !messageQueueIsEmpty;
 
   void _notifyMessage(message, bool fromExecutingContext) {
     var messageHandler = _messageHandler;
@@ -89,12 +105,16 @@ class AsyncTaskChannel {
 
   @override
   String toString() {
-    return 'AsyncTaskChannel{initialized: $isInitialized}';
+    return 'AsyncTaskChannel{id: $id, initialized: $isInitialized}';
   }
 }
 
 /// Base class for channels ports.
 abstract class AsyncTaskChannelPort {
+  static int _idCount = 0;
+
+  final int id = ++_idCount;
+
   final AsyncTaskChannel _channel;
 
   AsyncTaskChannelPort(this._channel);
@@ -173,5 +193,41 @@ abstract class AsyncTaskChannelPort {
       readQueue.addLast(completer);
       return completer.future;
     }
+  }
+
+  /// Reads a message from queue if present or return `null`.
+  T? readSync<T>(bool inExecutingContext) {
+    QueueList<dynamic> messageQueue;
+
+    if (inExecutingContext) {
+      messageQueue = _messageQueueExecutingContext;
+    } else {
+      messageQueue = _messageQueue;
+    }
+
+    if (messageQueue.isNotEmpty) {
+      var msg = messageQueue.removeFirst() as T;
+      return msg;
+    } else {
+      return null;
+    }
+  }
+
+  /// Returns the length of the message queue.
+  int messageQueueLength(bool inExecutingContext) {
+    QueueList<dynamic> messageQueue;
+
+    if (inExecutingContext) {
+      messageQueue = _messageQueueExecutingContext;
+    } else {
+      messageQueue = _messageQueue;
+    }
+
+    return messageQueue.length;
+  }
+
+  @override
+  String toString() {
+    return 'AsyncTaskChannelPort{ id: $id, executingContext: [m: ${_messageQueueExecutingContext.length}, r: ${_readQueueExecutingContext.length}], caller: [m: ${_messageQueue.length}, r: ${_readQueue.length}] }';
   }
 }

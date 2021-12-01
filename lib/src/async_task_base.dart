@@ -44,6 +44,9 @@ class AsyncTaskPlatform {
 }
 
 /// Base class for tasks implementation.
+///
+/// - [P] is the [parameters] type.
+/// - [R] is the [result] type.
 abstract class AsyncTask<P, R> {
   final Completer<R> _completer = Completer<R>();
 
@@ -445,11 +448,12 @@ class AsyncExecutor {
 
     _logger.logInfo('Starting $this');
 
-    await _executorThread.start();
+    _executorThread.start().then((_) {
+      _started = true;
+      starting.complete(true);
+      _flushTasksToExecute();
+    });
 
-    _started = true;
-
-    starting.complete(true);
     return starting.future;
   }
 
@@ -469,17 +473,42 @@ class AsyncExecutor {
     }
 
     if (!_started) {
-      return _executeNotStarted(task, sharedDataInfo: sharedDataInfo);
+      return _executeNotStarted(task, sharedDataInfo);
     } else {
-      return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
+      return _executeAlreadyStarted(task, sharedDataInfo);
     }
   }
 
-  Future<R> _executeNotStarted<P, R>(AsyncTask<P, R> task,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
-    return start().then((_) {
-      return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
-    });
+  List<_TaskToExecute>? _tasksToExecuteQueue;
+
+  Future<R> _executeNotStarted<P, R>(
+      AsyncTask<P, R> task, AsyncExecutorSharedDataInfo? sharedDataInfo) {
+    var tasksToExecuteQueue = _tasksToExecuteQueue ??= <_TaskToExecute>[];
+    var taskToExecute = _TaskToExecute<P, R>(task, sharedDataInfo);
+    tasksToExecuteQueue.add(taskToExecute);
+
+    start();
+
+    return taskToExecute.completer.future;
+  }
+
+  void _flushTasksToExecute() {
+    var tasksToExecuteQueue = _tasksToExecuteQueue;
+    if (tasksToExecuteQueue == null) return;
+    _tasksToExecuteQueue = null;
+
+    for (var t in tasksToExecuteQueue) {
+      t.execute(this);
+    }
+  }
+
+  Future<R> _executeAlreadyStarted<P, R>(
+      AsyncTask<P, R> task, AsyncExecutorSharedDataInfo? sharedDataInfo) {
+    if (_tasksToExecuteQueue != null) {
+      _flushTasksToExecute();
+    }
+
+    return _executorThread.execute(task, sharedDataInfo: sharedDataInfo);
   }
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
@@ -507,6 +536,7 @@ class AsyncExecutor {
           (i) => execute(tasks[i], sharedDataInfo: sharedDataInfo));
     } else {
       return tasks
+          .toList()
           .map((t) => execute(t, sharedDataInfo: sharedDataInfo))
           .toList();
     }
@@ -591,6 +621,30 @@ class AsyncExecutor {
         ' platform: $platform,'
         ' executorThread: $_executorThread'
         ' }';
+  }
+}
+
+/// This is a task in a execution queue, of not dispatched tasks.
+///
+/// Used when [AsyncExecutor.execute] is called before [AsyncExecutor.start].
+class _TaskToExecute<P, R> {
+  final AsyncTask<P, R> task;
+
+  final AsyncExecutorSharedDataInfo? sharedDataInfo;
+  final Completer<R> completer;
+
+  _TaskToExecute(this.task, this.sharedDataInfo) : completer = Completer<R>();
+
+  void execute(AsyncExecutor executor) {
+    executor.execute(task, sharedDataInfo: sharedDataInfo).then((res) {
+      if (!completer.isCompleted) {
+        completer.complete(res);
+      }
+    }, onError: (e, s) {
+      if (!completer.isCompleted) {
+        completer.completeError(e, s);
+      }
+    });
   }
 }
 

@@ -228,9 +228,19 @@ class YourTask extends AsyncTask<String, int> {
   FutureOr<int> run() async {
     // ...
     
+    // get the resolved channel:
     var channel = channelResolved()!; // The channel is always resolved inside `run()`.
+    
+    // Send and wait a message in the channel:
+    channel.send('some message');
+    var result = await channel.waitMessage<String>();
+    
+    // Send and wait in a single method:
     var result = await channel.sendAndWaitResponse<String, String>('some message');
 
+    // Read a message if available in the queue (non-blocking):
+    var msgOptional = channel.readMessage<String>();
+    
     // ...
   }
 }
@@ -239,25 +249,27 @@ class YourTask extends AsyncTask<String, int> {
 
 Outside communication with the task:
 ```dart
-// ...
-
-// Execute the task:
-asyncExecutor.execute(task);
-
-// ...
-
-// Wait for the channel to be resolved:
-var channel = (await task.channel())!;
-
-// Wait for a message:
-var msg = await channel.waitMessage();
-
-// process msg...
-
-// Send a response:
-channel.send('Some response');
-
-// ...
+void main() async {
+  // ...
+  
+  // Execute the task:
+  asyncExecutor.execute(task);
+  
+  // ...
+  
+  // Wait for the channel to be resolved:
+  var channel = (await task.channel())!;
+  
+  // Wait for a message:
+  var msg = await channel.waitMessage();
+  
+  // process msg...
+  
+  // Send a response:
+  channel.send('Some response');
+  
+  // ...
+}
 ```
 
 An `AsyncTaskChannel` is automatically closed when a task finishes (returns its result).

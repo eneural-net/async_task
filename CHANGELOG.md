@@ -1,3 +1,17 @@
+## 1.0.13
+
+- `AsyncTaskChannel`:
+  - Added `id` to help debugging.
+  - Added non-blocking `readMessage`.
+  - Added `messageQueueLength` and `messageQueueIsEmpty`.
+- `AsyncTaskChannelPort`:
+  - Added `id` to help debugging.
+  - Added  `readSync` and `messageQueueLength`.
+- Fixed issue executing tasks in a not start `AsyncExecutor` that is sequencial.
+- async_extension: ^1.0.9
+- test: ^1.19.5
+- dependency_validator: ^3.1.2
+
 ## 1.0.12
 
 - Migrate from `pedantic` to `lints`.

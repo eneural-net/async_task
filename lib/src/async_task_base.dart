@@ -1,9 +1,7 @@
-import 'dart:async';
-
 import 'package:async_extension/async_extension.dart';
-import 'package:async_task/src/async_task_channel.dart';
 import 'package:collection/collection.dart';
 
+import 'async_task_channel.dart';
 import 'async_task_generic.dart'
     if (dart.library.isolate) 'async_task_isolate.dart';
 import 'async_task_shared_data.dart';

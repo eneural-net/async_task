@@ -1,9 +1,7 @@
 @Timeout(Duration(seconds: 450))
-import 'dart:async';
 
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
-import 'package:async_task/src/async_task_channel.dart';
 import 'package:test/test.dart';
 
 void main() {

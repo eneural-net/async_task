@@ -1,3 +1,7 @@
+## 1.0.14
+
+- Fix issue when reusing `_ReceivePort`.
+
 ## 1.0.13
 
 - `AsyncTaskChannel`:

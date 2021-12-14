@@ -1150,6 +1150,8 @@ class _RawReceivePortPool {
 void _unsetHandler(dynamic message) =>
     throw StateError('_ReceivePort.handler called while unset!');
 
+void _disableHandler(dynamic message) {}
+
 typedef PortHandler = void Function(dynamic message);
 
 class _ReceivePort {
@@ -1168,14 +1170,21 @@ class _ReceivePort {
   }
 
   void disposeHandler() {
-    _handler = _unsetHandler;
+    _handler = _disableHandler;
   }
 
   void _callHandler(dynamic message) {
-    _handler(message);
+    if (!_closed) {
+      _handler(message);
+    }
   }
 
-  void close() => _port.close();
+  bool _closed = false;
+  void close() {
+    if (_closed) return ;
+    _closed = true;
+    _port.close();
+  }
 }
 
 int? _getAsyncExecutorMaximumParallelism;

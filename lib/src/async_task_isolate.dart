@@ -1181,7 +1181,7 @@ class _ReceivePort {
 
   bool _closed = false;
   void close() {
-    if (_closed) return ;
+    if (_closed) return;
     _closed = true;
     _port.close();
   }

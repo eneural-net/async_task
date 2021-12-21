@@ -1,6 +1,6 @@
 name: async_task
 description: Asynchronous tasks and parallel executors (similar to thread pools) for all Dart platforms (transparently), without having to deal with `Isolate` complexity.
-version: 1.0.14
+version: 1.0.15
 homepage: https://github.com/eneural-net/async_task
 
 environment:
@@ -9,6 +9,7 @@ environment:
 dependencies:
   collection: ^1.15.0
   async_extension: ^1.0.9
+  ffi: ^1.1.2
 
 dev_dependencies:
   lints: ^1.0.1

@@ -1,3 +1,8 @@
+## 1.0.15
+
+- Added `SharedPointer`: shared a memory aread between `Isolate`s.
+- ffi: ^1.1.2
+
 ## 1.0.14
 
 - Fix issue when reusing `_ReceivePort`.

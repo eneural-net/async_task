@@ -6,6 +6,9 @@ import 'async_task_extension.dart';
 
 /// Interface for serializable data classes:
 abstract class SerializableData<D, S> {
+  /// Forces serialization and deserialization even when [SharedData.noSerializationOnDartNative] is `true`.
+  bool get requiresSerializationToBeShared => false;
+
   /// Creates a new instance with [data].
   SerializableData<D, S> instantiate(D data);
 
@@ -345,13 +348,20 @@ class SharedData<D, S> {
   /// Deserialize a [SharedData] from [serial].
   SharedData<D, S> deserialize(S serial, {AsyncTaskPlatform? platform}) {
     if (noSerializationOnDartNative && (platform?.isNative ?? false)) {
-      return SharedData<D, S>(serial as D,
+      D data;
+      if (serial is SerializableData &&
+          serial.requiresSerializationToBeShared) {
+        data = serial.deserializeData(serial) as D;
+      } else {
+        data = serial as D;
+      }
+      return SharedData<D, S>(data,
           noSerializationOnDartNative: noSerializationOnDartNative);
     } else if (deserializer != null) {
       return deserializer!(serial);
     } else {
-      var data = SerializableData.deserializeGeneric(serial);
-      return SharedData(data as D);
+      var data = SerializableData.deserializeGeneric<D>(serial);
+      return SharedData(data);
     }
   }
 
@@ -359,8 +369,13 @@ class SharedData<D, S> {
 
   /// Serializes this instance to [S].
   S serialize({AsyncTaskPlatform? platform}) {
+    var data = this.data;
     if (noSerializationOnDartNative && (platform?.isNative ?? false)) {
-      return data as S;
+      if (data is SerializableData && data.requiresSerializationToBeShared) {
+        return data.serialize() as S;
+      } else {
+        return data as S;
+      }
     } else if (serializer != null) {
       return serializer!(data);
     } else {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:async_task/async_task.dart';
 import 'package:async_task/src/async_task_shared_pointer.dart';
@@ -21,6 +22,21 @@ void main() {
       {
         sp.write(1234);
         expect(sp.read(), equals(1234));
+
+        expect(
+            sp.bytes,
+            equals(Endian.host == Endian.big
+                ? [0, 0, 0x04, 0xD2]
+                : [0xD2, 0x04, 0, 0]));
+
+        sp.byteData.setUint8(1, 0x05);
+        expect(sp.read(), equals(1490));
+
+        expect(
+            sp.bytes,
+            equals(Endian.host == Endian.big
+                ? [0, 0, 0x05, 0xD2]
+                : [0xD2, 0x05, 0, 0]));
       }
 
       {

@@ -332,6 +332,12 @@ abstract class SharedPointerBytes<T> extends SharedPointer<T> {
         _pointer.address, runtimeType, [allocatedBytesLength, bytesPerValue]);
   }
 
+  /// The [Uint8List] bytes viewer of this [Pointer] memory.
+  Uint8List get bytes => _data;
+
+  /// The [ByteData] of this [Pointer] memory.
+  ByteData get byteData => _byteData;
+
   /// Implementation to write a [value] to the [byteData] of this instance [Pointer].
   void writeToByteData(ByteData byteData, int offset, T value);
 
@@ -430,23 +436,36 @@ abstract class SharedPointer<T>
   /// [interval] (default: 10ms) and a [timeout] (default: 10s) that checks
   /// for a new value if needed.
   FutureOr<T?> readNewValue(
-      {T? lastValue, Duration? interval, Duration? timeout}) {
+      {T? lastValue,
+      Duration? interval,
+      Duration? timeout,
+      bool acceptsNullValue = true}) {
     var value = read();
-    if (value != lastValue || lastValue == null) return value;
+
+    if (acceptsNullValue || value != null) {
+      if (lastValue == null || value != lastValue) {
+        return value;
+      }
+    }
 
     interval ??= Duration(milliseconds: 10);
     timeout ??= Duration(seconds: 10);
-    return _readNewValueImpl(lastValue, interval, timeout);
+    return _readNewValueImpl(lastValue, interval, timeout, acceptsNullValue);
   }
 
-  Future<T?> _readNewValueImpl(
-      T lastValue, Duration interval, Duration timeout) async {
+  Future<T?> _readNewValueImpl(T? lastValue, Duration interval,
+      Duration timeout, bool acceptsNullValue) async {
     var init = DateTime.now();
     while (true) {
       await Future.delayed(interval);
 
       var value = read();
-      if (value != lastValue) return value;
+
+      if (acceptsNullValue || value != null) {
+        if (lastValue == null || value != lastValue) {
+          return value;
+        }
+      }
 
       var elapsedTime = DateTime.now().difference(init);
       if (elapsedTime > timeout) return null;

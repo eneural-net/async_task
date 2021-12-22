@@ -1,3 +1,8 @@
+## 1.0.16
+
+- `SharedPointerBytes`:
+  - Expose `bytes`and `byteData`.
+
 ## 1.0.15
 
 - Added `SharedPointer`: shared a memory aread between `Isolate`s.

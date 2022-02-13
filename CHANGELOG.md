@@ -13,7 +13,7 @@
 
 ## 1.0.15
 
-- Added `SharedPointer`: shared a memory aread between `Isolate`s.
+- Added `SharedPointer`: shared memory area between `Isolate`s.
 - ffi: ^1.1.2
 
 ## 1.0.14

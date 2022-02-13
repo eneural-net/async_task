@@ -69,6 +69,10 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   int get maximumWorkers => totalThreads;
 
   @override
+  AsyncExecutorThreadInfo get info => AsyncExecutorThreadInfo(
+      sequential, maximumWorkers, _threads.map((t) => t.info).toList(), true);
+
+  @override
   AsyncTaskPlatform get platform => _platform;
 
   bool _start = false;
@@ -155,14 +159,13 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
     bindTask(task);
 
-    var taskChannel = task.resolveChannel((t, c) {
-      if (c != null) {
-        c.initialize(
-            t,
-            _AsyncTaskChannelPortIsolate(
-                c, _receivePortPool, _receivePortPool.catchPort(), false));
-      }
-    });
+    var taskChannel = task.resolveChannel((t, c) => c.initialize(
+        t,
+        _AsyncTaskChannelPortIsolate(
+            c, _receivePortPool, _receivePortPool.catchPort(), false)));
+
+    task.addOnFinishAsyncTask(
+        (asyncTask, result, error, stackTrace) => _onFinishTask());
 
     var taskWrapper = _TaskWrapper<P, R>(task, taskChannel, sharedDataInfo);
 
@@ -173,8 +176,6 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
     } else {
       _dispatchTask(taskWrapper);
     }
-
-    task.waitResult().whenComplete(_onFinishTask);
 
     return task.waitResult();
   }
@@ -194,7 +195,12 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
   void _dispatchTask<P, R>(_TaskWrapper<P, R> taskWrapper) {
     var thread = _catchThread();
-    thread.onResolve((t) => t.submit(taskWrapper, this));
+
+    if (thread is Future<_IsolateThread>) {
+      thread.then((t) => t.submit(taskWrapper, this));
+    } else {
+      thread.submit(taskWrapper, this);
+    }
   }
 
   void _dispatchTaskWithThread<P, R>(
@@ -205,8 +211,8 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   void _onDispatchTaskFinished<P, R>(
     _TaskWrapper<P, R> taskWrapper,
     _IsolateThread thread,
-    dynamic result, [
-    dynamic error,
+    Object? result, [
+    Object? error,
     StackTrace? stackTrace,
   ]) {
     try {
@@ -367,13 +373,13 @@ class _AsyncTaskChannelPortIsolate extends AsyncTaskChannelPort {
     onReceiveMessage(message, !inExecutingContext);
   }
 
-  List<dynamic>? _unsetMessages;
+  List<Object?>? _unsetMessages;
 
   @override
   void send<M>(M message, bool inExecutingContext) {
     var sendPort = _sendPort;
     if (sendPort == null) {
-      var unsetMessages = _unsetMessages ??= <dynamic>[];
+      var unsetMessages = _unsetMessages ??= <Object?>[];
       unsetMessages.add(message);
     } else {
       sendPort.send(message);
@@ -387,6 +393,7 @@ class _AsyncTaskChannelPortIsolate extends AsyncTaskChannelPort {
 
   @override
   void close() {
+    if (isClosed) return;
     super.close();
     _receivePortPool.releasePort(_receivePort);
   }
@@ -412,6 +419,9 @@ class _IsolateThread {
 
   _IsolateThread(this._taskRegister, this._logger, this._platform)
       : id = ++_idCounter;
+
+  AsyncThreadInfo get info =>
+      AsyncThreadInfo(id, _submittedTasks, _executedTasks);
 
   List<String>? _registeredTasksTypes;
 
@@ -442,7 +452,9 @@ class _IsolateThread {
         _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
 
     await Isolate.spawn(_Isolate._asyncTaskExecutorIsolateMain,
-        [id, receivePort.sendPort, _taskRegister]);
+        [id, receivePort.sendPort, _taskRegister],
+        debugName: 'async_task/_IsolateThread/$id');
+
     var ret = await completer.future;
 
     _sendPort = ret[0];
@@ -454,6 +466,8 @@ class _IsolateThread {
 
     _waitStartCompleter.complete(this);
     starting.complete(this);
+
+    _starting = null;
 
     return this;
   }
@@ -486,11 +500,16 @@ class _IsolateThread {
 
   final Set<String> _sentSharedDataSignatures = <String>{};
 
+  int _submittedTasks = 0;
+  int _executedTasks = 0;
+
   void submit<P, R>(
       _TaskWrapper taskWrapper, _AsyncExecutorMultiThread parent) {
     lastCommunication = DateTime.now();
 
     parent.logger.logExecution('Executing task', this, taskWrapper.task);
+
+    ++_submittedTasks;
 
     var responsePort = _receivePortPool.catchPort();
     responsePort.setHandler(
@@ -553,6 +572,8 @@ class _IsolateThread {
       _receivePortPool.releasePort(responsePort);
 
       var ok = ret[0] as bool;
+
+      ++_executedTasks;
 
       if (ok) {
         taskWrapper.initTime =
@@ -654,14 +675,13 @@ class _IsolateThread {
 class _Isolate {
   // Use an extended name for the Isolate entrypoint to be easily visible
   // in the Observatory and debugging tools.
-  static void _asyncTaskExecutorIsolateMain(List initMessage) async {
+  static void _asyncTaskExecutorIsolateMain(List initMessage) {
     var thID = initMessage[0];
     SendPort sendPort = initMessage[1];
     AsyncTaskRegister taskRegister = initMessage[2];
 
     var isolate = _Isolate(thID);
-
-    await isolate._start(sendPort, taskRegister);
+    isolate._start(sendPort, taskRegister);
   }
 
   final int thID;
@@ -676,15 +696,24 @@ class _Isolate {
     _port.handler = _onMessage;
   }
 
-  Future<void> _start(SendPort sendPort, AsyncTaskRegister taskRegister) async {
-    var registeredTasks = await taskRegister();
+  void _start(SendPort sendPort, AsyncTaskRegister taskRegister) {
+    var registeredTasks = taskRegister();
+    if (registeredTasks is Future<List<AsyncTask>>) {
+      registeredTasks.then((tasks) {
+        _startImpl(tasks, sendPort);
+      });
+    } else {
+      _startImpl(registeredTasks, sendPort);
+    }
+  }
+
+  void _startImpl(List<AsyncTask> registeredTasks, SendPort sendPort) {
+    for (var task in registeredTasks) {
+      _registeredTasks[task.taskType] = task;
+    }
+
     var registeredTasksTypes =
         registeredTasks.map((t) => t.taskType).toSet().toList();
-
-    for (var task in registeredTasks) {
-      var type = task.taskType;
-      _registeredTasks[type] = task;
-    }
 
     sendPort.send([_port.sendPort, registeredTasksTypes]);
   }
@@ -699,6 +728,7 @@ class _Isolate {
           _onClose();
           replyPort.send(true);
           Zone.current.scheduleMicrotask(() {
+            _receivePortPool.close();
             _port.close();
             Isolate.current.kill();
           });
@@ -748,7 +778,7 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       List message,
       SendPort replyPort) {
     if (message.length > 6) {
@@ -790,7 +820,7 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       Map<String, Object> sharedDataMap,
       SendPort replyPort) {
     var taskRegistered = _getRegisteredTask(taskType);
@@ -807,7 +837,7 @@ class _Isolate {
         taskChannelSendPort, parameters, sharedDataMapResolved, replyPort);
   }
 
-  AsyncTask<dynamic, dynamic> _getRegisteredTask(String taskType) {
+  AsyncTask _getRegisteredTask(String taskType) {
     var taskRegistered = _registeredTasks[taskType];
     if (taskRegistered == null) {
       throw StateError("Can't find registered task for: $taskType");
@@ -821,7 +851,7 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       Map<String, Object> sharedDataMap,
       SendPort replyPort) {
     var needToRequestSharedData = false;
@@ -860,7 +890,7 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       Map<String, Object> sharedDataMap,
       SendPort replyPort) {
     var taskRegistered = _getRegisteredTask(taskType);
@@ -888,7 +918,7 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       Map<String, Object> sharedDataMap,
       SendPort replyPort) async {
     var ret =
@@ -907,10 +937,11 @@ class _Isolate {
       DateTime submitTime,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      dynamic parameters,
+      Object? parameters,
       Map<String, SharedData>? sharedDataMap,
       SendPort replyPort) {
     AsyncTask? instantiatedTask;
+
     try {
       var taskRegistered = _getRegisteredTask(taskType);
       var task = instantiatedTask =
@@ -918,65 +949,43 @@ class _Isolate {
 
       task.submitTime = submitTime;
 
-      task.resolveChannel((t, c) {
-        if (c != null) {
-          c.initialize(
-              t,
-              _AsyncTaskChannelPortIsolate(c, _receivePortPool,
-                  taskChannelReceivePort!, true, taskChannelSendPort));
+      task.resolveChannel((t, c) => c.initialize(
+          t,
+          _AsyncTaskChannelPortIsolate(c, _receivePortPool,
+              taskChannelReceivePort!, true, taskChannelSendPort)));
+
+      task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
+        if (error != null) {
+          _processTaskReplyError(asyncTask, error, stackTrace, replyPort);
+        } else {
+          _processTaskReplyResult(asyncTask, result, replyPort);
         }
       });
 
-      var ret = task.execute();
-
-      if (ret is Future) {
-        // ignore: unawaited_futures
-        ret.then((_) {
-          var result = task.result;
-          _processTaskReplyResult(task, result, replyPort);
-        }, onError: (e, s) {
-          _processTaskReplyError(task, e, s, replyPort);
-        });
-      } else {
-        _processTaskReplyResult(task, ret, replyPort);
-      }
+      task.execute();
     } catch (e, s) {
       _processTaskReplyError(instantiatedTask, e, s, replyPort);
     }
   }
 
   void _processTaskReplyResult(
-      AsyncTask<dynamic, dynamic> task, dynamic result, SendPort replyPort) {
+      AsyncTask task, Object? result, SendPort replyPort) {
     replyPort.send([
       true,
       task.initTime!.millisecondsSinceEpoch,
       task.endTime!.millisecondsSinceEpoch,
       result
     ]);
-
-    var taskChannel = task.channelResolved();
-
-    if (taskChannel != null) {
-      taskChannel.close();
-    }
   }
 
-  void _processTaskReplyError(AsyncTask<dynamic, dynamic>? task, Object error,
-      StackTrace s, SendPort replyPort) {
+  void _processTaskReplyError(
+      AsyncTask? task, Object error, StackTrace? s, SendPort replyPort) {
     var lines = '$s'.split(RegExp(r'[\r\n]'));
     if (lines.last.isEmpty) {
       lines.removeLast();
     }
 
     replyPort.send([false, '$error', lines]);
-
-    if (task != null) {
-      var taskChannel = task.channelResolved();
-
-      if (taskChannel != null) {
-        taskChannel.close();
-      }
-    }
   }
 
   final Map<String, Completer<SharedData>> _requestingSharedDatas =
@@ -1106,14 +1115,17 @@ class _RawReceivePortPool {
 
   _ReceivePort catchPortWithAutoRelease<R>() {
     var port = catchPort();
+
     port.setHandler((r) {
       releasePort(port);
     });
+
     return port;
   }
 
   _ReceivePort catchPortWithCompleterAndAutoRelease<R>(Completer<R> completer) {
     var port = catchPort();
+
     port.setHandler((r) {
       releasePort(port);
       completer.complete(r);
@@ -1146,10 +1158,10 @@ class _RawReceivePortPool {
   }
 }
 
-void _unsetHandler(dynamic message) =>
+void _unsetHandler(Object? message) =>
     throw StateError('_ReceivePort.handler called while unset!');
 
-void _disableHandler(dynamic message) {}
+void _disableHandler(Object? message) {}
 
 typedef PortHandler = void Function(dynamic message);
 
@@ -1179,10 +1191,12 @@ class _ReceivePort {
   }
 
   bool _closed = false;
+
   void close() {
     if (_closed) return;
     _closed = true;
     _port.close();
+    disposeHandler();
   }
 }
 

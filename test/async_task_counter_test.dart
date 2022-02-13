@@ -1,5 +1,4 @@
 @Timeout(Duration(seconds: 450))
-
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
 import 'package:test/test.dart';
@@ -248,6 +247,14 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
     expect(n, equals(c.result));
 
     expect(c.executionTime!.inMilliseconds >= 100, isTrue);
+
+    var taskChannel = c.channelResolved();
+    if (withTaskChannel) {
+      expect(taskChannel, isNotNull);
+      expect(taskChannel!.isClosed, isTrue);
+    } else {
+      expect(taskChannel, isNull);
+    }
   }
 
   var listInitTime = counters.map((c) => c.initTime!).toList()..sort();

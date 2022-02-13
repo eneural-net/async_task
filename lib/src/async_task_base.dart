@@ -41,6 +41,9 @@ class AsyncTaskPlatform {
   }
 }
 
+typedef OnFinishAsyncTask = void Function(
+    AsyncTask asyncTask, Object? result, Object? error, StackTrace? stackTrace);
+
 /// Base class for tasks implementation.
 ///
 /// - [P] is the [parameters] type.
@@ -114,11 +117,43 @@ abstract class AsyncTask<P, R> {
     }
   }
 
+  List<OnFinishAsyncTask>? _onFinishAsyncTaskTriggers;
+
+  /// Adds a trigger to be called when this tasks finishes.
+  ///
+  /// - Throws a [StateError] if is already finished ([isFinished]).
+  void addOnFinishAsyncTask(OnFinishAsyncTask onFinishAsyncTask) {
+    if (isFinished) {
+      throw StateError('Task already finished');
+    }
+
+    var triggers = _onFinishAsyncTaskTriggers ??= <OnFinishAsyncTask>[];
+    triggers.add(onFinishAsyncTask);
+  }
+
+  void _callOnFinishAsyncTask(
+      Object? result, Object? error, StackTrace? stackTrace) {
+    var triggers = _onFinishAsyncTaskTriggers;
+    if (triggers != null) {
+      _onFinishAsyncTaskTriggers = null;
+      for (var trigger in triggers) {
+        try {
+          trigger(this, result, error, stackTrace);
+        } catch (e, s) {
+          print(e);
+          _executorThread?.logger.logError(error, s);
+        }
+      }
+    }
+  }
+
   void _finish(R result, {DateTime? initTime, DateTime? endTime}) {
     _setExecutionTime(initTime, endTime);
     _result = result;
     _finished = true;
+    _callOnFinishAsyncTask(result, null, null);
     _completer.complete(result);
+    _finishChannel();
   }
 
   void _finishError(Object error, StackTrace? stackTrace,
@@ -126,7 +161,16 @@ abstract class AsyncTask<P, R> {
     _setExecutionTime(initTime, endTime);
     _error = error;
     _finished = true;
+    _callOnFinishAsyncTask(null, error, stackTrace);
     _completer.completeError(error, stackTrace);
+    _finishChannel();
+  }
+
+  void _finishChannel() {
+    var channel = _channelInstance;
+    if (channel != null) {
+      channel.close();
+    }
   }
 
   void _setExecutionTime(DateTime? initTime, DateTime? endTime) {
@@ -234,15 +278,20 @@ abstract class AsyncTask<P, R> {
 
   /// Resolves the channel instance. Called by [AsyncExecutor] when executing this task.
   AsyncTaskChannel? resolveChannel(
-      void Function(AsyncTask task, AsyncTaskChannel? channel) initializer) {
+      void Function(AsyncTask task, AsyncTaskChannel channel) initializer) {
     if (_channelResolved) return _channelInstance;
     var channel = _channelInstance = channelInstantiator();
-    initializer(this, channel);
+
+    if (channel != null) {
+      initializer(this, channel);
+    }
+
     _channelResolved = true;
     var waitingChannelToResolve = _waitingChannelToResolve;
     if (waitingChannelToResolve != null) {
       waitingChannelToResolve.complete(channel);
     }
+
     return channel;
   }
 
@@ -425,6 +474,8 @@ class AsyncExecutor {
 
   int get maximumWorkers => _executorThread.maximumWorkers;
 
+  AsyncExecutorThreadInfo get info => _executorThread.info;
+
   AsyncTaskLoggerCaller get logger => _logger;
 
   bool _started = false;
@@ -450,6 +501,7 @@ class AsyncExecutor {
       _started = true;
       starting.complete(true);
       _flushTasksToExecute();
+      _starting = null;
     });
 
     return starting.future;
@@ -629,20 +681,60 @@ class _TaskToExecute<P, R> {
   final AsyncTask<P, R> task;
 
   final AsyncExecutorSharedDataInfo? sharedDataInfo;
-  final Completer<R> completer;
 
-  _TaskToExecute(this.task, this.sharedDataInfo) : completer = Completer<R>();
+  _TaskToExecute(this.task, this.sharedDataInfo);
 
-  void execute(AsyncExecutor executor) {
-    executor.execute(task, sharedDataInfo: sharedDataInfo).then((res) {
-      if (!completer.isCompleted) {
-        completer.complete(res);
-      }
-    }, onError: (e, s) {
-      if (!completer.isCompleted) {
-        completer.completeError(e, s);
-      }
-    });
+  Completer<R> get completer => task._completer;
+
+  void execute(AsyncExecutor executor) =>
+      executor.execute(task, sharedDataInfo: sharedDataInfo);
+}
+
+/// An [AsyncExecutorThread] info.
+class AsyncExecutorThreadInfo {
+  /// `true` if the [AsyncExecutor] is sequencial.
+  final bool sequential;
+
+  /// The maximum number of workers of the [AsyncExecutor].
+  final int maximumWorkers;
+
+  /// Threads information.
+  final List<AsyncThreadInfo> threads;
+
+  /// `true` if the [AsyncExecutor] really runs in parallel (separated `Isolate`, `Thread` or `Worker`).
+  final bool parallel;
+
+  AsyncExecutorThreadInfo(
+      this.sequential, this.maximumWorkers, this.threads, this.parallel);
+
+  /// Total number of threads/workers.
+  int get workers => threads.length;
+
+  @override
+  String toString() {
+    return 'AsyncExecutorThreadInfo{ sequential: $sequential, maximumWorkers: $maximumWorkers, workers: $workers, parallel: $parallel }';
+  }
+}
+
+/// A thread info.
+class AsyncThreadInfo {
+  /// The ID of the thread/worker.
+  final int id;
+
+  /// The total dispatched tasks by the thread/worker.
+  final int dispatchedTasks;
+
+  /// The total executed tasks by the thread/worker.
+  final int executedTasks;
+
+  AsyncThreadInfo(this.id, this.dispatchedTasks, this.executedTasks);
+
+  /// The current executing tasks in the thread/worker.
+  int get executingTasks => dispatchedTasks - executedTasks;
+
+  @override
+  String toString() {
+    return 'AsyncThreadInfo{ id: $id, dispatchedTasks: $dispatchedTasks, executedTasks: $executedTasks, executingTasks: $executingTasks }';
   }
 }
 
@@ -656,6 +748,8 @@ abstract class AsyncExecutorThread {
   AsyncTaskPlatform get platform;
 
   int get maximumWorkers;
+
+  AsyncExecutorThreadInfo get info;
 
   /// Starts this thread.
   FutureOr<bool> start();
@@ -688,13 +782,8 @@ abstract class AsyncExecutorThread {
   /// Perform a task finish operation.
   void finishTask<P, R>(
       AsyncTask<P, R> task, DateTime? initTime, DateTime? endTime, R result,
-      [dynamic error, StackTrace? stackTrace]) {
+      [Object? error, StackTrace? stackTrace]) {
     if (!task.isFinished) {
-      var taskChannel = task._channelInstance;
-      if (taskChannel != null) {
-        taskChannel.close();
-      }
-
       if (error != null) {
         task._finishError(error, stackTrace,
             initTime: initTime, endTime: endTime);
@@ -722,6 +811,13 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
 
   @override
   int get maximumWorkers => 1;
+
+  @override
+  AsyncExecutorThreadInfo get info => AsyncExecutorThreadInfo(
+      sequential,
+      maximumWorkers,
+      [AsyncThreadInfo(0, _dispatchedTasksCount, _executedTasksCount)],
+      false);
 
   Zone? _zone;
 
@@ -751,7 +847,10 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
     return executingContext;
   }
 
-  final QueueList<AsyncTask> _queue = QueueList<AsyncTask>(32);
+  int _dispatchedTasksCount = 0;
+  int _executedTasksCount = 0;
+
+  final QueueList<AsyncTask> _sequentialQueue = QueueList<AsyncTask>(32);
   AsyncTask? _executing;
 
   @override
@@ -759,11 +858,8 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
       {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
     bindTask(task);
 
-    task.resolveChannel((t, c) {
-      if (c != null) {
-        c.initialize(t, _AsyncTaskChannelPortLocal(c));
-      }
-    });
+    task.resolveChannel(
+        (t, c) => c.initialize(t, _AsyncTaskChannelPortLocal(c)));
 
     if (sequential) {
       if (_executing == null) {
@@ -771,17 +867,29 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
 
         _zone!.scheduleMicrotask(() async {
           logger.logExecution('Executing task', this, task);
-          await task.execute();
-          assert(identical(_executing, task));
-          _executing = null;
-          _consumeQueue();
+          ++_dispatchedTasksCount;
+
+          task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
+            assert(identical(_executing, asyncTask));
+
+            _executing = null;
+            ++_executedTasksCount;
+            _consumeSequentialQueue();
+          });
+
+          task.execute();
         });
       } else {
-        _queue.add(task);
+        _sequentialQueue.add(task);
       }
     } else {
       _zone!.scheduleMicrotask(() {
         logger.logExecution('Executing task', this, task);
+        ++_dispatchedTasksCount;
+
+        task.addOnFinishAsyncTask(
+            (asyncTask, result, error, stackTrace) => ++_executedTasksCount);
+
         task.execute();
       });
     }
@@ -789,19 +897,26 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
     return task._completer.future;
   }
 
-  void _consumeQueue() {
-    if (_queue.isNotEmpty) {
-      var task = _queue.removeFirst();
-      _executing = task;
+  void _consumeSequentialQueue() {
+    if (_sequentialQueue.isEmpty) return;
 
-      Zone.current.scheduleMicrotask(() {
-        task.execute().resolveMapped((val) {
-          assert(identical(_executing, task));
-          _executing = null;
-          _consumeQueue();
-        });
+    var task = _sequentialQueue.removeFirst();
+    _executing = task;
+
+    Zone.current.scheduleMicrotask(() {
+      logger.logExecution('Executing task', this, task);
+      ++_dispatchedTasksCount;
+
+      task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
+        assert(identical(_executing, asyncTask));
+
+        ++_executedTasksCount;
+        _executing = null;
+        _consumeSequentialQueue();
       });
-    }
+
+      task.execute();
+    });
   }
 
   @override

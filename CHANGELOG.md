@@ -1,3 +1,11 @@
+## 1.0.17
+
+- New `AsyncExecutorThreadInfo` and `AsyncThreadInfo`.
+- Improved `AsyncTaskChannel` close behavior.
+- Reduced allocation of closures and `Future`s to improve GC performance.
+- `AsyncTask`:
+  - Added trigger list `addOnFinishAsyncTask`, to avoid `Future`s.
+
 ## 1.0.16
 
 - `SharedPointerBytes`:

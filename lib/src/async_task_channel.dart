@@ -123,6 +123,7 @@ abstract class AsyncTaskChannelPort {
 
   bool get isClosed => _closed;
 
+  /// Closes this port. If it's already closed, a call will have no effect.
   void close() {
     _closed = true;
   }

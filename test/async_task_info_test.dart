@@ -1,6 +1,7 @@
 @Timeout(Duration(seconds: 60))
 import 'dart:developer';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
@@ -92,8 +93,11 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
     totalExecutedTasks += t.executedTasks;
 
     expect(t.executedTasks, equals(t.dispatchedTasks));
+
+    var margin = math.max(2, tasksPerThread ~/ 4);
+
     expect(t.dispatchedTasks,
-        inInclusiveRange(tasksPerThread - 2, tasksPerThread + 2));
+        inInclusiveRange(tasksPerThread - margin, tasksPerThread + margin));
   }
 
   expect(totalDispatchedTasks, equals(totalTasks));

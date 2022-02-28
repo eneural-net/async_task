@@ -1,3 +1,9 @@
+## 1.0.18
+
+- `AsyncExecutor`:
+  - Added field `name` (for debug purposes).
+  - Now detects Isolate starting timeout. 
+
 ## 1.0.17
 
 - New `AsyncExecutorThreadInfo` and `AsyncThreadInfo`.

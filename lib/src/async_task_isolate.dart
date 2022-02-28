@@ -50,10 +50,10 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   final List<_IsolateThread> _threads = <_IsolateThread>[];
   final QueueList<_IsolateThread> _freeThreads = QueueList<_IsolateThread>();
 
-  _AsyncExecutorMultiThread(AsyncTaskLoggerCaller logger, bool sequential,
-      this.taskRegister, int totalThreads)
+  _AsyncExecutorMultiThread(String executorName, AsyncTaskLoggerCaller logger,
+      bool sequential, this.taskRegister, int totalThreads)
       : totalThreads = math.max(1, totalThreads),
-        super(logger, sequential) {
+        super(executorName, logger, sequential) {
     _instances.add(this);
   }
 
@@ -127,7 +127,8 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
   FutureOr<_IsolateThread> _catchNotFreeThread() {
     if (_threads.length < totalThreads && _closing == null) {
-      var newThread = _IsolateThread(taskRegister, logger, _platform);
+      var newThread =
+          _IsolateThread(executorName, taskRegister, logger, _platform);
       _threads.add(newThread);
       return newThread._start();
     } else {
@@ -407,7 +408,9 @@ class _AsyncTaskChannelPortIsolate extends AsyncTaskChannelPort {
 class _IsolateThread {
   static int _idCounter = 0;
 
-  final int id;
+  final int id = ++_idCounter;
+
+  final String executorName;
 
   final AsyncTaskRegister _taskRegister;
 
@@ -417,8 +420,8 @@ class _IsolateThread {
 
   final _RawReceivePortPool _receivePortPool = _RawReceivePortPool();
 
-  _IsolateThread(this._taskRegister, this._logger, this._platform)
-      : id = ++_idCounter;
+  _IsolateThread(
+      this.executorName, this._taskRegister, this._logger, this._platform);
 
   AsyncThreadInfo get info =>
       AsyncThreadInfo(id, _submittedTasks, _executedTasks);
@@ -455,7 +458,13 @@ class _IsolateThread {
         [id, receivePort.sendPort, _taskRegister],
         debugName: 'async_task/_IsolateThread/$id');
 
-    var ret = await completer.future;
+    var ret = await completer.future
+        .timeout(Duration(seconds: 15), onTimeout: () => []);
+
+    if (ret.isEmpty) {
+      throw TimeoutException(
+          'Isolate#$id for `AsyncExecutor{name: "$executorName"}` start not completed!');
+    }
 
     _sendPort = ret[0];
     _registeredTasksTypes = ret[1];
@@ -676,12 +685,17 @@ class _Isolate {
   // Use an extended name for the Isolate entrypoint to be easily visible
   // in the Observatory and debugging tools.
   static void _asyncTaskExecutorIsolateMain(List initMessage) {
-    var thID = initMessage[0];
-    SendPort sendPort = initMessage[1];
-    AsyncTaskRegister taskRegister = initMessage[2];
+    runZonedGuarded(() {
+      var thID = initMessage[0];
+      SendPort sendPort = initMessage[1];
+      AsyncTaskRegister taskRegister = initMessage[2];
 
-    var isolate = _Isolate(thID);
-    isolate._start(sendPort, taskRegister);
+      var isolate = _Isolate(thID);
+
+      isolate._start(sendPort, taskRegister);
+    }, (e, s) {
+      print('** AsyncExecutor Isolate error: $e');
+    });
   }
 
   final int thID;
@@ -1205,7 +1219,7 @@ int? _getAsyncExecutorMaximumParallelism;
 int getAsyncExecutorMaximumParallelism() =>
     _getAsyncExecutorMaximumParallelism ??= Platform.numberOfProcessors;
 
-AsyncExecutorThread? createMultiThreadAsyncExecutorThread(
+AsyncExecutorThread? createMultiThreadAsyncExecutorThread(String executorName,
     AsyncTaskLoggerCaller logger, bool sequential, int parallelism,
     [AsyncTaskRegister? taskRegister]) {
   if (taskRegister == null) {
@@ -1214,5 +1228,5 @@ AsyncExecutorThread? createMultiThreadAsyncExecutorThread(
   }
 
   return _AsyncExecutorMultiThread(
-      logger, sequential, taskRegister, parallelism);
+      executorName, logger, sequential, taskRegister, parallelism);
 }

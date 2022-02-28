@@ -337,15 +337,15 @@ abstract class AsyncTask<P, R> {
   }
 }
 
-AsyncExecutorThread createAsyncExecutorThread(
+AsyncExecutorThread createAsyncExecutorThread(String executorName,
     AsyncTaskLoggerCaller logger, bool sequential, int parallelism,
     [AsyncTaskRegister? taskRegister]) {
   if (parallelism >= 1) {
     return (createMultiThreadAsyncExecutorThread(
-            logger, sequential, parallelism, taskRegister) ??
-        _AsyncExecutorSingleThread(logger, sequential));
+            executorName, logger, sequential, parallelism, taskRegister) ??
+        _AsyncExecutorSingleThread(executorName, logger, sequential));
   } else {
-    return _AsyncExecutorSingleThread(logger, sequential);
+    return _AsyncExecutorSingleThread(executorName, logger, sequential);
   }
 }
 
@@ -435,6 +435,9 @@ class AsyncExecutor {
     }
   }
 
+  /// The name of this executor (for debug purposes).
+  final String name;
+
   /// If `true` the tasks will be executed sequentially, waiting each
   /// task to finished before start the next, in the order of [execute] call.
   final bool sequential;
@@ -454,7 +457,8 @@ class AsyncExecutor {
   late final AsyncTaskLoggerCaller _logger;
 
   AsyncExecutor(
-      {this.sequential = false,
+      {this.name = '',
+      this.sequential = false,
       int? parallelism,
       double? parallelismPercentage,
       this.taskTypeRegister,
@@ -462,6 +466,7 @@ class AsyncExecutor {
       : parallelism = parameterParallelism(
             value: parallelism, byPercentage: parallelismPercentage),
         _executorThread = createAsyncExecutorThread(
+            name,
             AsyncTaskLoggerCaller(logger),
             sequential,
             parameterParallelism(
@@ -740,10 +745,11 @@ class AsyncThreadInfo {
 
 /// Base class for executor thread implementation.
 abstract class AsyncExecutorThread {
+  final String executorName;
   final AsyncTaskLoggerCaller logger;
   final bool sequential;
 
-  AsyncExecutorThread(this.logger, this.sequential);
+  AsyncExecutorThread(this.executorName, this.logger, this.sequential);
 
   AsyncTaskPlatform get platform;
 
@@ -800,8 +806,9 @@ abstract class AsyncExecutorThread {
 }
 
 class _AsyncExecutorSingleThread extends AsyncExecutorThread {
-  _AsyncExecutorSingleThread(AsyncTaskLoggerCaller logger, bool sequential)
-      : super(logger, sequential);
+  _AsyncExecutorSingleThread(
+      String executorName, AsyncTaskLoggerCaller logger, bool sequential)
+      : super(executorName, logger, sequential);
 
   final AsyncTaskPlatform _platform =
       AsyncTaskPlatform(AsyncTaskPlatformType.generic, 1);

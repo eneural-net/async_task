@@ -332,7 +332,9 @@ abstract class AsyncTask<P, R> {
 
   String _toTrimmedString(dynamic o, [int limit = 10]) {
     var s = '$o';
-    if (s.length > limit) s = s.substring(0, limit) + '...';
+    if (s.length > limit) {
+      s = '${s.substring(0, limit)}...';
+    }
     return s;
   }
 }

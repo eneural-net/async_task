@@ -95,7 +95,7 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
 
     expect(t.executedTasks, equals(t.dispatchedTasks));
 
-    var margin = math.max(2, tasksPerThread ~/ 3);
+    var margin = math.max(2, tasksPerThread ~/ 2);
 
     expect(t.dispatchedTasks,
         inInclusiveRange(tasksPerThread - margin, tasksPerThread + margin));

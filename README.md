@@ -104,7 +104,7 @@ class PrimeChecker extends AsyncTask<int, bool> {
     if (n < 2) return false;
 
     var limit = n ~/ 2;
-    for (var p = 2; p < limit; ++p) {
+    for (var p = 2; p <= limit; ++p) {
       if (n % p == 0) return false;
     }
 

@@ -1,4 +1,5 @@
 @Timeout(Duration(seconds: 60))
+@TestOn('vm')
 import 'dart:developer';
 import 'dart:isolate';
 import 'dart:math' as math;

@@ -48,6 +48,8 @@ void main() {
       expect(SerializableData.computeGenericSignature(10),
           matches(RegExp(r'int>\d+')));
       expect(SerializableData.computeGenericSignature(10.0),
+          matches(RegExp(r'(?:double|int)>\d+')));
+      expect(SerializableData.computeGenericSignature(10.1),
           matches(RegExp(r'double>\d+')));
       expect(SerializableData.computeGenericSignature(true),
           matches(RegExp(r'bool>true')));

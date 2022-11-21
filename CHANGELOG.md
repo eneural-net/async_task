@@ -1,6 +1,7 @@
 ## 1.0.19
 
 - Update GitHub CI.
+  - Added tests in chrome.
 - sdk: '>=2.17.0 <3.0.0'
 - collection: ^1.17.0
 - async_extension: ^1.0.12

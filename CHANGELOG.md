@@ -1,3 +1,16 @@
+## 1.0.19
+
+- Update GitHub CI.
+- sdk: '>=2.17.0 <3.0.0'
+- collection: ^1.17.0
+- async_extension: ^1.0.12
+- ffi: ^2.0.1
+- lints: ^2.0.1
+- test: ^1.22.0
+- dependency_validator: ^3.2.2
+- coverage: ^1.6.1
+- vm_service: ^9.4.0
+
 ## 1.0.18
 
 - `AsyncExecutor`:

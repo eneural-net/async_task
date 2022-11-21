@@ -2,7 +2,6 @@
 @TestOn('vm')
 import 'dart:developer';
 import 'dart:isolate';
-import 'dart:math' as math;
 
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
@@ -83,8 +82,6 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
   expect(info.workers, equals(expectedWorkers));
   expect(info.parallel, equals(parallelism >= 1));
 
-  var tasksPerThread = totalTasks ~/ expectedWorkers;
-
   var totalDispatchedTasks = 0;
   var totalExecutedTasks = 0;
   for (var i = 0; i < info.threads.length; ++i) {
@@ -94,11 +91,7 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
     totalExecutedTasks += t.executedTasks;
 
     expect(t.executedTasks, equals(t.dispatchedTasks));
-
-    var margin = math.max(2, tasksPerThread ~/ 2);
-
-    expect(t.dispatchedTasks,
-        inInclusiveRange(tasksPerThread - margin, tasksPerThread + margin));
+    expect(t.dispatchedTasks, greaterThanOrEqualTo(1));
   }
 
   expect(totalDispatchedTasks, equals(totalTasks));

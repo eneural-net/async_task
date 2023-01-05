@@ -126,6 +126,16 @@ Output:
 16769023 -> true 	 PrimeChecker(16769023)[finished]{ result: true ; executionTime: 35 ms }
 ```
 
+### parallelism
+
+Note that the parameter `parallelism` at `AsyncExecutor` shouldn't be greater than the CPU cores
+*(unless you really have a case that justifies a higher number)*.
+
+The most common error is to put a high number for the parameter `parallelism` thinking that this will increase tasks
+execution, but this actually  can reduce your application performance. Note that each allocated `Isolate`needs a CPU
+core to execute, and a high number of `Isolate` instances running tasks will be a bottleneck in your system
+(specially if you are demanding more `Isolate` than CPU cores). 
+
 ## SharedData
 
 The class `SharedData` facilitates and optimizes data shared between tasks.

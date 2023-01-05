@@ -1,3 +1,10 @@
+## 1.0.20
+
+- `README.md`:
+  - Fix GitHub CI badge.
+  - Added `parallelism` explanation.
+- test: ^1.22.1
+
 ## 1.0.19
 
 - Update GitHub CI.

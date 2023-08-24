@@ -1,3 +1,15 @@
+## 1.1.0
+
+- sdk: '>=3.0.0 <4.0.0'
+- 
+- collection: ^1.18.0
+- async_extension: ^1.2.4
+- ffi: ^2.1.0
+- lints: ^2.1.1
+- test: ^1.24.6
+- coverage: ^1.6.3
+- vm_service: ^11.9.0
+
 ## 1.0.20
 
 - `README.md`:

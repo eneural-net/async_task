@@ -1,7 +1,7 @@
 ## 1.1.0
 
 - sdk: '>=3.0.0 <4.0.0'
-- 
+
 - collection: ^1.18.0
 - async_extension: ^1.2.4
 - ffi: ^2.1.0

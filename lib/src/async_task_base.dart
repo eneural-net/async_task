@@ -1011,12 +1011,28 @@ class AsyncExecutorError {
   final dynamic cause;
 
   /// The error stack-trace.
-  final dynamic stackTrace;
+  final Object? _stackTrace;
 
-  AsyncExecutorError(this.message, [this.cause, this.stackTrace]);
+  AsyncExecutorError(this.message, [this.cause, this._stackTrace]);
+
+  AsyncExecutorError copyWith(
+          {String? message, Object? cause, Object? stackTrace}) =>
+      AsyncExecutorError(message ?? this.message, cause ?? this.cause,
+          stackTrace ?? _stackTrace);
+
+  dynamic get stackTrace {
+    var s = _stackTrace;
+    if (s is String) {
+      return StackTrace.fromString(s);
+    } else if (s is Iterable<String>) {
+      return StackTrace.fromString(s.join('\n'));
+    } else {
+      return s;
+    }
+  }
 
   @override
-  String toString() {
-    return 'AsyncExecutorError{message: $message, cause: $cause, stackTrace: $stackTrace}';
-  }
+  String toString({bool full = true}) => full
+      ? 'AsyncExecutorError: $message\n-- Cause: $cause\n$stackTrace\n'
+      : 'AsyncExecutorError: $message';
 }

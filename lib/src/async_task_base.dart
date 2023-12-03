@@ -156,6 +156,8 @@ abstract class AsyncTask<P, R> {
     _finished = true;
 
     _callOnFinishAsyncTask(result, null, null);
+
+    assert(!_completer.isCompleted);
     _completer.complete(result);
 
     _finishChannel();

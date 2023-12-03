@@ -140,15 +140,11 @@ abstract class AsyncTask<P, R> {
     if (triggers != null) {
       _onFinishAsyncTaskTriggers = null;
 
-      final logger = _executorThread?.logger;
-
       for (var trigger in triggers) {
         try {
           trigger(this, result, error, stackTrace);
         } catch (e, s) {
-          print(e);
-
-          logger?.logError(error, s);
+          _executorThread?.logger.logError(error, s);
         }
       }
     }

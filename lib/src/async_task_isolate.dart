@@ -490,6 +490,10 @@ class _IsolateThread {
     }
   }
 
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+
   Future<bool> close() async {
     var completer = Completer<bool>();
     var receivePort =
@@ -502,6 +506,8 @@ class _IsolateThread {
     await completer.future;
 
     _receivePortPool.close();
+
+    _closed = true;
 
     return true;
   }

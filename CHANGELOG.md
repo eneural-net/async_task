@@ -9,6 +9,11 @@
 - async_extension: ^1.2.5
 - lints: ^3.0.0
 
+- test: ^1.24.9
+- dependency_validator: ^3.2.3
+- coverage: ^1.7.1
+- vm_service: ^13.0.0
+
 ## 1.1.0
 
 - sdk: '>=3.0.0 <4.0.0'

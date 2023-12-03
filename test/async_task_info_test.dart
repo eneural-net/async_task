@@ -154,7 +154,7 @@ Future<void> checkMemoryInstances(
   var vm = await vmService.getVM();
 
   var isolate = Isolate.current;
-  var isolateID = Service.getIsolateID(isolate)!;
+  var isolateID = Service.getIsolateId(isolate)!;
 
   var vmIsolate = await vmService.getIsolate(isolateID);
   print('-- vmIsolate: ${vmIsolate.name}');

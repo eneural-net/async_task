@@ -51,15 +51,12 @@ typedef OnFinishAsyncTask = void Function(
 abstract class AsyncTask<P, R> {
   final Completer<R> _completer = Completer<R>();
 
+  static final Expando<String> _taskTypeExpando = Expando();
+
   String? _taskType;
 
-  String get taskType {
-    var taskType = _taskType;
-    if (taskType == null) {
-      _taskType = taskType = '$runtimeType';
-    }
-    return taskType;
-  }
+  String get taskType =>
+      _taskType ??= _taskTypeExpando[runtimeType] ??= runtimeType.toString();
 
   R? _result;
 
@@ -127,21 +124,30 @@ abstract class AsyncTask<P, R> {
       throw StateError('Task already finished');
     }
 
-    var triggers = _onFinishAsyncTaskTriggers ??= <OnFinishAsyncTask>[];
-    triggers.add(onFinishAsyncTask);
+    var triggers = _onFinishAsyncTaskTriggers;
+    if (triggers != null) {
+      triggers.add(onFinishAsyncTask);
+    } else {
+      _onFinishAsyncTaskTriggers = [onFinishAsyncTask];
+    }
   }
 
   void _callOnFinishAsyncTask(
       Object? result, Object? error, StackTrace? stackTrace) {
-    var triggers = _onFinishAsyncTaskTriggers;
+    final triggers = _onFinishAsyncTaskTriggers;
+
     if (triggers != null) {
       _onFinishAsyncTaskTriggers = null;
+
+      final logger = _executorThread?.logger;
+
       for (var trigger in triggers) {
         try {
           trigger(this, result, error, stackTrace);
         } catch (e, s) {
           print(e);
-          _executorThread?.logger.logError(error, s);
+
+          logger?.logError(error, s);
         }
       }
     }
@@ -151,8 +157,10 @@ abstract class AsyncTask<P, R> {
     _setExecutionTime(initTime, endTime);
     _result = result;
     _finished = true;
+
     _callOnFinishAsyncTask(result, null, null);
     _completer.complete(result);
+
     _finishChannel();
   }
 
@@ -161,16 +169,15 @@ abstract class AsyncTask<P, R> {
     _setExecutionTime(initTime, endTime);
     _error = error;
     _finished = true;
+
     _callOnFinishAsyncTask(null, error, stackTrace);
     _completer.completeError(error, stackTrace);
+
     _finishChannel();
   }
 
   void _finishChannel() {
-    var channel = _channelInstance;
-    if (channel != null) {
-      channel.close();
-    }
+    _channelInstance?.close();
   }
 
   void _setExecutionTime(DateTime? initTime, DateTime? endTime) {
@@ -385,12 +392,34 @@ class AsyncTaskLoggerCaller {
   AsyncTaskLoggerCaller(AsyncTaskLogger? logger)
       : _logger = logger ?? defaultAsyncTaskLogger;
 
-  bool enabled = false;
+  static void _dummyLogger(String type, dynamic message,
+      [dynamic error, dynamic stackTrace]) {}
+
+  AsyncTaskLogger _actualLogger = _dummyLogger;
+
+  bool _enabled = false;
+
+  bool get enabled => _enabled;
+
+  set enabled(bool value) {
+    _enabled = value;
+
+    if (_enabled) {
+      _actualLogger = _logger;
+
+      if (_enabledExecution) {
+        _actualExecutionLogger = _logExecutionImpl;
+      } else {
+        _actualExecutionLogger = _dummyLogExecution;
+      }
+    } else {
+      _actualLogger = _dummyLogger;
+      _actualExecutionLogger = _dummyLogExecution;
+    }
+  } //bool enabled = false;
 
   void log(String type, dynamic message, [dynamic error, dynamic stackTrace]) {
-    if (enabled) {
-      _logger(type, message, error, stackTrace);
-    }
+    _actualLogger(type, message, error, stackTrace);
   }
 
   void logInfo(dynamic message) => log('INFO', message);
@@ -400,12 +429,31 @@ class AsyncTaskLoggerCaller {
   void logError(dynamic error, dynamic stackTrace) =>
       log('ERROR', null, error, stackTrace);
 
-  bool enabledExecution = false;
+  static void _dummyLogExecution(dynamic message, dynamic a, dynamic b) {}
+
+  void Function(dynamic message, dynamic a, dynamic b) _actualExecutionLogger =
+      _dummyLogExecution;
+
+  void _logExecutionImpl(dynamic message, dynamic a, dynamic b) {
+    _actualLogger('EXEC', '$message > $a > $b');
+  }
+
+  bool _enabledExecution = false;
+
+  bool get enabledExecution => _enabledExecution;
+
+  set enabledExecution(bool value) {
+    _enabledExecution = value;
+
+    if (_enabled && _enabledExecution) {
+      _actualExecutionLogger = _logExecutionImpl;
+    } else {
+      _actualExecutionLogger = _dummyLogExecution;
+    }
+  }
 
   void logExecution(dynamic message, dynamic a, dynamic b) {
-    if (enabledExecution) {
-      log('EXEC', '$message > $a > $b');
-    }
+    _actualExecutionLogger(message, a, b);
   }
 }
 
@@ -809,8 +857,7 @@ abstract class AsyncExecutorThread {
 
 class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   _AsyncExecutorSingleThread(
-      String executorName, AsyncTaskLoggerCaller logger, bool sequential)
-      : super(executorName, logger, sequential);
+      super.executorName, super.logger, super.sequential);
 
   final AsyncTaskPlatform _platform =
       AsyncTaskPlatform(AsyncTaskPlatformType.generic, 1);
@@ -945,7 +992,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
 }
 
 class _AsyncTaskChannelPortLocal extends AsyncTaskChannelPort {
-  _AsyncTaskChannelPortLocal(AsyncTaskChannel channel) : super(channel);
+  _AsyncTaskChannelPortLocal(super.channel);
 
   @override
   void send<M>(M message, bool inExecutingContext) {
@@ -954,7 +1001,7 @@ class _AsyncTaskChannelPortLocal extends AsyncTaskChannelPort {
 }
 
 class AsyncExecutorClosedError extends AsyncExecutorError {
-  AsyncExecutorClosedError(dynamic cause) : super(cause);
+  AsyncExecutorClosedError(super.cause);
 }
 
 /// Error for [AsyncTask] execution.

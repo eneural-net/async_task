@@ -50,10 +50,9 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   final List<_IsolateThread> _threads = <_IsolateThread>[];
   final QueueList<_IsolateThread> _freeThreads = QueueList<_IsolateThread>();
 
-  _AsyncExecutorMultiThread(String executorName, AsyncTaskLoggerCaller logger,
-      bool sequential, this.taskRegister, int totalThreads)
-      : totalThreads = math.max(1, totalThreads),
-        super(executorName, logger, sequential) {
+  _AsyncExecutorMultiThread(super.executorName, super.logger, super.sequential,
+      this.taskRegister, int totalThreads)
+      : totalThreads = math.max(1, totalThreads) {
     _instances.add(this);
   }
 
@@ -341,10 +340,9 @@ class _AsyncTaskChannelPortIsolate extends AsyncTaskChannelPort {
 
   final bool inExecutingContext;
 
-  _AsyncTaskChannelPortIsolate(AsyncTaskChannel channel, this._receivePortPool,
+  _AsyncTaskChannelPortIsolate(super.channel, this._receivePortPool,
       this._receivePort, this.inExecutingContext,
-      [SendPort? sendPort])
-      : super(channel) {
+      [SendPort? sendPort]) {
     if (sendPort == null) {
       _receivePort.setHandler(_onSendPortMessage);
     } else {
@@ -497,7 +495,10 @@ class _IsolateThread {
     var receivePort =
         _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
 
-    _sendPort!.send([receivePort.sendPort, 'close']);
+    _sendPort!.send(
+      _IsolateMsgClose(receivePort.sendPort),
+    );
+
     await completer.future;
 
     _receivePortPool.close();
@@ -531,6 +532,7 @@ class _IsolateThread {
 
       var sharedDataMap = sharedData.map((k, sd) {
         var signature = sd.signature;
+
         if (_sentSharedDataSignatures.contains(signature)) {
           return MapEntry(k, signature);
         } else {
@@ -541,80 +543,84 @@ class _IsolateThread {
 
           _logger.logExecution('Pre-sending SharedData:', signature, this);
 
-          return MapEntry(
-              k,
-              _SharedDataSerial(
-                  signature, sd.serializeCached(platform: parent.platform)));
+          var sharedDataSerial = _SharedDataSerial(
+              signature, sd.serializeCached(platform: parent.platform));
+
+          return MapEntry(k, sharedDataSerial);
         }
       });
 
+      sharedDataMap = Map<String, Object>.unmodifiable(sharedDataMap);
+
       var sentAllSharedData = sentSharedData == sharedDataMap.length;
 
-      _sendPort!.send([
-        responsePort.sendPort,
-        'task',
-        taskWrapper.taskType,
-        taskWrapper.submitTime.millisecondsSinceEpoch,
-        taskWrapper.taskChannelPort?.receivePort.sendPort,
-        taskWrapper.parameters,
-        sentAllSharedData,
-        sharedDataMap
-      ]);
+      _sendPort!.send(
+        _IsolateMsgTask(
+            responsePort.sendPort,
+            taskWrapper.taskType,
+            taskWrapper.submitTime,
+            taskWrapper.taskChannelPort?.receivePort.sendPort,
+            taskWrapper.parameters,
+            sentAllSharedData,
+            sharedDataMap),
+      );
     } else {
-      _sendPort!.send([
-        responsePort.sendPort,
-        'task',
-        taskWrapper.taskType,
-        taskWrapper.submitTime.millisecondsSinceEpoch,
-        taskWrapper.taskChannelPort?.receivePort.sendPort,
-        taskWrapper.parameters
-      ]);
+      _sendPort!.send(
+        _IsolateMsgTask(
+          responsePort.sendPort,
+          taskWrapper.taskType,
+          taskWrapper.submitTime,
+          taskWrapper.taskChannelPort?.receivePort.sendPort,
+          taskWrapper.parameters,
+        ),
+      );
     }
   }
 
-  void _onSubmitResponse<P, R>(_TaskWrapper<P, R> taskWrapper,
-      _AsyncExecutorMultiThread parent, _ReceivePort responsePort, List ret) {
-    if (ret[0] is String) {
+  void _onSubmitResponse<P, R>(
+      _TaskWrapper<P, R> taskWrapper,
+      _AsyncExecutorMultiThread parent,
+      _ReceivePort responsePort,
+      _IsolateReply ret) {
+    if (ret is _IsolateReplySharedDataRequest) {
       _submitSharedData(ret, responsePort, taskWrapper.sharedData,
           taskWrapper.sharedDataInfo);
-    } else {
+    } else if (ret is _IsolateReplyResult) {
       _receivePortPool.releasePort(responsePort);
-
-      var ok = ret[0] as bool;
-
       ++_executedTasks;
 
-      if (ok) {
-        taskWrapper.initTime =
-            DateTime.fromMillisecondsSinceEpoch(ret[1] as int);
-        taskWrapper.endTime =
-            DateTime.fromMillisecondsSinceEpoch(ret[2] as int);
-        var result = ret[3];
+      taskWrapper.initTime = ret.initTime;
+      taskWrapper.endTime = ret.endTime;
+      var result = ret.result;
 
-        parent._onDispatchTaskFinished(taskWrapper, this, result as R);
-      } else {
-        var error = ret[1];
-        var stackTrace = ret[2];
+      parent._onDispatchTaskFinished(taskWrapper, this, result as R);
+    } else if (ret is _IsolateReplyError) {
+      _receivePortPool.releasePort(responsePort);
+      ++_executedTasks;
 
-        var error2 = AsyncExecutorError(
-            'Task execution error at $this', error, stackTrace);
+      var error = ret.error;
+      var stackTrace = ret.stackTrace;
 
-        parent._onDispatchTaskFinished(
-            taskWrapper, this, null, error2, StackTrace.current);
-      }
+      var error2 = AsyncExecutorError(
+          'Task execution error at $this', error, stackTrace);
+
+      parent._onDispatchTaskFinished(
+          taskWrapper, this, null, error2, StackTrace.current);
+    } else {
+      throw StateError("Unknown reply: $ret");
     }
   }
 
   void _submitSharedData(
-      List ret,
+      _IsolateReplySharedDataRequest req,
       _ReceivePort responsePort,
       Map<String, SharedData>? sharedDataMap,
       AsyncExecutorSharedDataInfo? sharedDataInfo) {
-    var requestedKey = ret[0];
+    var requestedKey = req.key;
     // `SharedData` signature:
-    var requestedSignature = ret[1];
+    var requestedSignature = req.sharedDataSignature;
     // The port to send the `SharedData`:
-    var sharedDataReplyPort = ret[2] as SendPort;
+    var sharedDataReplyPort = req.replyPort;
 
     if (sharedDataMap == null) {
       throw StateError(
@@ -640,12 +646,13 @@ class _IsolateThread {
 
     _logger.logExecution('Sending SharedData', signature, this);
 
-    sharedDataReplyPort.send([
-      requestedKey,
-      sharedData.signature,
-      sharedData.serializeCached(platform: _platform),
-      responsePort.sendPort,
-    ]);
+    sharedDataReplyPort.send(
+      _IsolateReplySharedData(
+          requestedKey,
+          sharedData.signature,
+          sharedData.serializeCached(platform: _platform),
+          responsePort.sendPort),
+    );
   }
 
   Future<bool> _disposeSharedData<P, R>(Set<String> sharedDataSignatures) {
@@ -656,8 +663,9 @@ class _IsolateThread {
     var response =
         _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
 
-    _sendPort!
-        .send([response.sendPort, 'disposeSharedData', sharedDataSignatures]);
+    _sendPort!.send(
+      _IsolateMsgDisposeSharedData(response.sendPort, sharedDataSignatures),
+    );
 
     return completer.future;
   }
@@ -667,8 +675,9 @@ class _IsolateThread {
 
     var response = _receivePortPool.catchPortWithAutoRelease();
 
-    _sendPort!
-        .send([response.sendPort, 'disposeSharedData', sharedDataSignatures]);
+    _sendPort!.send(
+      _IsolateMsgDisposeSharedData(response.sendPort, sharedDataSignatures),
+    );
   }
 
   @override
@@ -729,31 +738,33 @@ class _Isolate {
     var registeredTasksTypes =
         registeredTasks.map((t) => t.taskType).toSet().toList();
 
-    sendPort.send([_port.sendPort, registeredTasksTypes]);
+    sendPort.send(
+      [_port.sendPort, registeredTasksTypes],
+    );
   }
 
-  void _onMessage(List message) {
-    var replyPort = message[0] as SendPort;
-    var type = message[1] as String;
+  void _onMessage(_IsolateMsg msg) {
+    var replyPort = msg.replyPort;
 
-    switch (type) {
-      case 'close':
+    switch (msg.type) {
+      case _IsolateMsgType.close:
         {
           _onClose();
           replyPort.send(true);
+
           Zone.current.scheduleMicrotask(() {
             _receivePortPool.close();
             _port.close();
             Isolate.current.kill();
           });
+
           break;
         }
-      case 'task':
+      case _IsolateMsgType.task:
         {
-          var taskType = message[2] as String;
-          var submitTime =
-              DateTime.fromMillisecondsSinceEpoch(message[3] as int);
-          var taskChannelSendPort = message[4] as SendPort?;
+          var message = msg as _IsolateMsgTask;
+
+          var taskChannelSendPort = message.taskChannelSendPort;
 
           _ReceivePort? taskChannelReceivePort;
           if (taskChannelSendPort != null) {
@@ -761,21 +772,20 @@ class _Isolate {
             taskChannelSendPort.send(taskChannelReceivePort.sendPort);
           }
 
-          var parameters = message[5];
+          _processTask(thID, message, taskChannelReceivePort,
+              taskChannelSendPort, replyPort);
 
-          _processTask(thID, taskType, submitTime, taskChannelReceivePort,
-              taskChannelSendPort, parameters, message, replyPort);
           break;
         }
-      case 'disposeSharedData':
+      case _IsolateMsgType.disposeSharedData:
         {
-          var sharedDataSignatures = message[2] as Set<String>;
-          _sharedDatas.removeAllKeys(sharedDataSignatures);
+          var message = msg as _IsolateMsgDisposeSharedData;
+          _sharedDatas.removeAllKeys(message.sharedDataSignatures);
           replyPort.send(true);
           break;
         }
       default:
-        throw StateError("Can't handle payload: $message");
+        throw StateError("Can't handle message: $msg");
     }
   }
 
@@ -788,43 +798,48 @@ class _Isolate {
 
   void _processTask(
       int thID,
-      String taskType,
-      DateTime submitTime,
+      _IsolateMsgTask message,
       _ReceivePort? taskChannelReceivePort,
       SendPort? taskChannelSendPort,
-      Object? parameters,
-      List message,
       SendPort replyPort) {
-    if (message.length > 6) {
-      var sentAllSharedData = message[6] as bool;
-      var sharedDataMap = message[7] as Map<String, Object>;
+    if (message.sentAllSharedData != null) {
+      var sentAllSharedData = message.sentAllSharedData!;
+      var sharedDataMap = message.sharedDataMap!;
 
       if (sentAllSharedData) {
         _processTaskWithPreSentSharedData(
           thID,
-          taskType,
-          submitTime,
+          message.taskType,
+          message.submitTime,
           taskChannelReceivePort,
           taskChannelSendPort,
-          parameters,
+          message.parameters,
           sharedDataMap,
           replyPort,
         );
       } else {
         _processTaskWithSharedDataToResolve(
           thID,
-          taskType,
-          submitTime,
+          message.taskType,
+          message.submitTime,
           taskChannelReceivePort,
           taskChannelSendPort,
-          parameters,
+          message.parameters,
           sharedDataMap,
           replyPort,
         );
       }
     } else {
-      _processTaskExecute(thID, taskType, submitTime, taskChannelReceivePort,
-          taskChannelSendPort, parameters, null, replyPort);
+      _processTaskExecute(
+        thID,
+        message.taskType,
+        message.submitTime,
+        taskChannelReceivePort,
+        taskChannelSendPort,
+        message.parameters,
+        null,
+        replyPort,
+      );
     }
   }
 
@@ -984,12 +999,9 @@ class _Isolate {
 
   void _processTaskReplyResult(
       AsyncTask task, Object? result, SendPort replyPort) {
-    replyPort.send([
-      true,
-      task.initTime!.millisecondsSinceEpoch,
-      task.endTime!.millisecondsSinceEpoch,
-      result
-    ]);
+    replyPort.send(
+      _IsolateReplyResult(task.initTime!, task.endTime!, result),
+    );
   }
 
   void _processTaskReplyError(
@@ -999,7 +1011,9 @@ class _Isolate {
       lines.removeLast();
     }
 
-    replyPort.send([false, '$error', lines]);
+    replyPort.send(
+      _IsolateReplyError('$error', lines),
+    );
   }
 
   final Map<String, Completer<SharedData>> _requestingSharedDatas =
@@ -1047,61 +1061,146 @@ class _Isolate {
       SendPort replyPort) async {
     var resolvedSharedData = _sharedDatas[sharedDataSign];
 
-    // If `SharedData` with `sharedDataSign` is not present, request it:
-    if (resolvedSharedData == null) {
-      var requesting = _requestingSharedDatas[sharedDataSign];
-
-      if (requesting != null) {
-        var resolvedSharedData = await requesting.future;
-        return MapEntry(resolvedSharedData, replyPort);
-      }
-
-      _requestingSharedDatas[sharedDataSign] =
-          requesting = Completer<SharedData>();
-
-      try {
-        var completer = Completer<List>();
-        var sharedDataPort =
-            _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
-
-        replyPort
-            .send([sharedDataKey, sharedDataSign, sharedDataPort.sendPort]);
-        var ret = await completer.future;
-
-        var retKey = ret[0] as String;
-        var retSign = ret[1] as String;
-        var retSerial = ret[2];
-        var retPort = ret[3] as SendPort;
-
-        if (retKey != sharedDataKey) {
-          throw StateError(
-              'Different provided SharedData key: requested = $sharedDataKey ; received = $retKey');
-        }
-
-        if (retSign != sharedDataSign) {
-          throw StateError(
-              'Different provided SharedData signature: requested = $sharedDataSign ; received = $retSign');
-        }
-
-        resolvedSharedData =
-            taskRegistered.loadSharedData(sharedDataKey, retSerial)!;
-        _sharedDatas[sharedDataSign] = resolvedSharedData;
-
-        replyPort = retPort;
-
-        requesting.complete(resolvedSharedData);
-
-        _requestingSharedDatas.remove(sharedDataSign);
-
-        return MapEntry(resolvedSharedData, replyPort);
-      } catch (e, s) {
-        requesting.completeError(e, s);
-        rethrow;
-      }
+    // If `SharedData` with `sharedDataSign` is already present:
+    if (resolvedSharedData != null) {
+      return MapEntry(resolvedSharedData, replyPort);
     }
 
-    return MapEntry(resolvedSharedData, replyPort);
+    // Check if the `SharedData` with `sharedDataSign` is being requested:
+
+    var requesting = _requestingSharedDatas[sharedDataSign];
+
+    if (requesting != null) {
+      var resolvedSharedData = await requesting.future;
+      return MapEntry(resolvedSharedData, replyPort);
+    }
+
+    // Request the missing `SharedData`:
+
+    _requestingSharedDatas[sharedDataSign] =
+        requesting = Completer<SharedData>();
+
+    try {
+      var completer = Completer<_IsolateReplySharedData>();
+      var sharedDataPort =
+          _receivePortPool.catchPortWithCompleterAndAutoRelease(completer);
+
+      replyPort.send(
+        _IsolateReplySharedDataRequest(
+            sharedDataKey, sharedDataSign, sharedDataPort.sendPort),
+      );
+
+      var ret = await completer.future;
+
+      var retKey = ret.key;
+      var retSign = ret.sharedDataSignature;
+      var retSerial = ret.sharedDataSerial;
+      var retPort = ret.replyPort;
+
+      if (retKey != sharedDataKey) {
+        throw StateError(
+            'Different provided SharedData key: requested = $sharedDataKey ; received = $retKey');
+      }
+
+      if (retSign != sharedDataSign) {
+        throw StateError(
+            'Different provided SharedData signature: requested = $sharedDataSign ; received = $retSign');
+      }
+
+      resolvedSharedData =
+          taskRegistered.loadSharedData(sharedDataKey, retSerial)!;
+      _sharedDatas[sharedDataSign] = resolvedSharedData;
+
+      replyPort = retPort;
+
+      requesting.complete(resolvedSharedData);
+
+      _requestingSharedDatas.remove(sharedDataSign);
+
+      return MapEntry(resolvedSharedData, replyPort);
+    } catch (e, s) {
+      requesting.completeError(e, s);
+      rethrow;
+    }
   }
+}
+
+enum _IsolateMsgType { close, task, disposeSharedData }
+
+sealed class _IsolateMsg {
+  final _IsolateMsgType type;
+  final SendPort replyPort;
+
+  const _IsolateMsg(this.type, this.replyPort);
+}
+
+final class _IsolateMsgClose extends _IsolateMsg {
+  const _IsolateMsgClose(SendPort replyPort)
+      : super(_IsolateMsgType.close, replyPort);
+}
+
+final class _IsolateMsgTask extends _IsolateMsg {
+  final String taskType;
+
+  final DateTime submitTime;
+
+  final SendPort? taskChannelSendPort;
+
+  final Object parameters;
+
+  final bool? sentAllSharedData;
+  final Map<String, Object>? sharedDataMap;
+
+  const _IsolateMsgTask(SendPort replyPort, this.taskType, this.submitTime,
+      this.taskChannelSendPort, this.parameters,
+      [this.sentAllSharedData, this.sharedDataMap])
+      : super(_IsolateMsgType.task, replyPort);
+}
+
+final class _IsolateMsgDisposeSharedData extends _IsolateMsg {
+  final Set<String> sharedDataSignatures;
+
+  const _IsolateMsgDisposeSharedData(
+      SendPort replyPort, this.sharedDataSignatures)
+      : super(_IsolateMsgType.disposeSharedData, replyPort);
+}
+
+sealed class _IsolateReply {
+  const _IsolateReply();
+}
+
+final class _IsolateReplySharedDataRequest extends _IsolateReply {
+  final String key;
+  final String sharedDataSignature;
+  final SendPort replyPort;
+
+  const _IsolateReplySharedDataRequest(
+      this.key, this.sharedDataSignature, this.replyPort);
+}
+
+final class _IsolateReplySharedData extends _IsolateReply {
+  final String key;
+  final String sharedDataSignature;
+  final Object sharedDataSerial;
+  final SendPort replyPort;
+
+  const _IsolateReplySharedData(this.key, this.sharedDataSignature,
+      this.sharedDataSerial, this.replyPort);
+}
+
+final class _IsolateReplyResult extends _IsolateReply {
+  final DateTime initTime;
+  final DateTime endTime;
+  final Object? result;
+
+  const _IsolateReplyResult(this.initTime, this.endTime, this.result);
+}
+
+final class _IsolateReplyError extends _IsolateReply {
+  final Object? error;
+  final List<String>? stackTrace;
+
+  const _IsolateReplyError(this.error, this.stackTrace);
 }
 
 class _SharedDataSerial<S> {

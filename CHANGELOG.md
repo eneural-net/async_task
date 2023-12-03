@@ -1,3 +1,14 @@
+## 1.1.1
+
+- Optimize `AsyncTaskLoggerCaller`:
+  - Avoid `String` build when logging is disabled.
+- Optimize `async_task_isolate.dart`:
+  - Improve message objects, to allow immutable detection. 
+
+- sdk: '>=3.2.0 <4.0.0'
+- async_extension: ^1.2.5
+- lints: ^3.0.0
+
 ## 1.1.0
 
 - sdk: '>=3.0.0 <4.0.0'

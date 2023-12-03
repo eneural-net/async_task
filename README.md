@@ -296,24 +296,28 @@ The official source code is [hosted @ GitHub][github_async_task]:
 
 Please file feature requests and bugs at the [issue tracker][tracker].
 
-# Contribution
+# Package `shared_map`
+
+See also the package [shared_map] for a way to transparently share data/objects between `Isolate`s.
+
+[shared_map]: https://pub.dev/packages/shared_map
+
+## Contribution
 
 Any help from the open-source community is always welcome and needed:
-- Found an issue?
-    - Please fill a bug report with details.
-- Wish a feature?
-    - Open a feature request with use cases.
-- Are you using and liking the project?
-    - Promote the project: create an article, do a post or make a donation.
-- Are you a developer?
-    - Fix a bug and send a pull request.
-    - Implement a new feature, like other training algorithms and activation functions.
-    - Improve the Unit Tests.
-- Have you already helped in any way?
-    - **Many thanks from me, the contributors and everybody that uses this project!**
 
-*If you donate 1 hour of your time, you can contribute a lot,
-because others will do the same, just be part and start with your 1 hour.*
+- **Have an issue?**
+  Please fill a bug report 👍.
+- **Feature?**
+  Request with use cases 🤝.
+- **Like the project?**
+  Promote, post, or donate 😄.
+- **Are you a developer?**
+  Fix a bug, add a feature, or improve tests 🚀.
+- **Already helped?**
+  Many thanks from me, the contributors and all project users 👏👏👏!
+
+*Contribute an hour and inspire others to do the same.*
 
 [tracker]: https://github.com/eneural-net/async_task/issues
 
@@ -322,6 +326,15 @@ because others will do the same, just be part and start with your 1 hour.*
 Graciliano M. Passos: [gmpassos@GitHub][github].
 
 [github]: https://github.com/gmpassos
+
+## Sponsor
+
+Don't be shy, show some love, and become our [GitHub Sponsor][github_sponsors].
+Your support means the world to us, and it keeps the code caffeinated! ☕✨
+
+Thanks a million! 🚀😄
+
+[github_sponsors]: https://github.com/sponsors/gmpassos
 
 ## License
 

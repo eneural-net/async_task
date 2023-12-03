@@ -103,6 +103,7 @@ abstract class AsyncTask<P, R> {
           return result;
         }, onError: (e, s) {
           _finishError(e, s, endTime: DateTime.now());
+          throw e;
         });
       } else {
         _finish(ret, endTime: DateTime.now());

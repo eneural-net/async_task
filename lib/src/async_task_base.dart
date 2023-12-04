@@ -5,6 +5,7 @@ import 'async_task_channel.dart';
 import 'async_task_generic.dart'
     if (dart.library.isolate) 'async_task_isolate.dart';
 import 'async_task_shared_data.dart';
+import 'async_task_extension.dart';
 
 /// Status of an [AsyncTask].
 enum AsyncTaskStatus {
@@ -49,17 +50,32 @@ typedef OnFinishAsyncTask = void Function(
 /// - [P] is the [parameters] type.
 /// - [R] is the [result] type.
 abstract class AsyncTask<P, R> {
+  final Zone _zone = Zone.current;
+
+  /// The original [Zone] where this [AsyncTask] instance was created.
+  Zone get zone => _zone;
+
   final Completer<R> _completer = Completer<R>();
+
+  Future<R> get _completerFuture => _completer.future;
+
+  // Suppress `Unhandled exception` on `_completer`.
+  // The error suppression only happens if `_completer.completeError`
+  // and `_completer.future.then` are called from the same `Zone` (`_zone`).
+  void _suppressCompleteErrorUnhandled() {
+    _zone.run(() => _completer.future.suppressUnhandledError());
+  }
+
+  void _completeError(Object error, [StackTrace? stackTrace]) {
+    _zone.run(() => _completer.completeError(error, stackTrace));
+  }
+
+  static final Expando<String> _taskTypeExpando = Expando();
 
   String? _taskType;
 
-  String get taskType {
-    var taskType = _taskType;
-    if (taskType == null) {
-      _taskType = taskType = '$runtimeType';
-    }
-    return taskType;
-  }
+  String get taskType =>
+      _taskType ??= _taskTypeExpando[runtimeType] ??= runtimeType.toString();
 
   R? _result;
 
@@ -90,7 +106,10 @@ abstract class AsyncTask<P, R> {
   bool get hasError => isFinished && _error != null;
 
   /// Executes this tasks immediately.
-  FutureOr<R> execute() {
+  FutureOr<R> execute() => executeAndCast<R>();
+
+  /// Alias for [execute], casting the result to [T].
+  FutureOr<T> executeAndCast<T>() {
     _initTime = DateTime.now();
 
     submitTime ??= _initTime;
@@ -98,18 +117,20 @@ abstract class AsyncTask<P, R> {
     try {
       var ret = run();
 
-      if (ret is Future) {
-        var future = ret as Future;
+      if (ret is Future<R>) {
+        Future<T>? ret2;
 
-        return future.then((result) {
+        return ret2 = ret.then((result) {
           _finish(result, endTime: DateTime.now());
-          return result;
+          return result as T;
         }, onError: (e, s) {
+          ret2?.suppressUnhandledError();
           _finishError(e, s, endTime: DateTime.now());
+          throw e;
         });
       } else {
         _finish(ret, endTime: DateTime.now());
-        return ret;
+        return ret as T;
       }
     } catch (e, s) {
       _finishError(e, s, endTime: DateTime.now());
@@ -127,20 +148,25 @@ abstract class AsyncTask<P, R> {
       throw StateError('Task already finished');
     }
 
-    var triggers = _onFinishAsyncTaskTriggers ??= <OnFinishAsyncTask>[];
-    triggers.add(onFinishAsyncTask);
+    var triggers = _onFinishAsyncTaskTriggers;
+    if (triggers != null) {
+      triggers.add(onFinishAsyncTask);
+    } else {
+      _onFinishAsyncTaskTriggers = [onFinishAsyncTask];
+    }
   }
 
   void _callOnFinishAsyncTask(
       Object? result, Object? error, StackTrace? stackTrace) {
-    var triggers = _onFinishAsyncTaskTriggers;
+    final triggers = _onFinishAsyncTaskTriggers;
+
     if (triggers != null) {
       _onFinishAsyncTaskTriggers = null;
+
       for (var trigger in triggers) {
         try {
           trigger(this, result, error, stackTrace);
         } catch (e, s) {
-          print(e);
           _executorThread?.logger.logError(error, s);
         }
       }
@@ -151,26 +177,39 @@ abstract class AsyncTask<P, R> {
     _setExecutionTime(initTime, endTime);
     _result = result;
     _finished = true;
+
     _callOnFinishAsyncTask(result, null, null);
+
+    assert(!_completer.isCompleted);
     _completer.complete(result);
+
     _finishChannel();
   }
 
   void _finishError(Object error, StackTrace? stackTrace,
       {DateTime? initTime, DateTime? endTime}) {
     _setExecutionTime(initTime, endTime);
-    _error = error;
+
+    var error2 = error is AsyncExecutorError
+        ? error
+        : AsyncExecutorError('AsyncTask execution error', error, stackTrace);
+
+    _error = error2;
     _finished = true;
-    _callOnFinishAsyncTask(null, error, stackTrace);
-    _completer.completeError(error, stackTrace);
+
+    _callOnFinishAsyncTask(null, error2, stackTrace);
+
+    assert(!_completer.isCompleted);
+
+    _suppressCompleteErrorUnhandled();
+
+    _completeError(error2, stackTrace);
+
     _finishChannel();
   }
 
   void _finishChannel() {
-    var channel = _channelInstance;
-    if (channel != null) {
-      channel.close();
-    }
+    _channelInstance?.close();
   }
 
   void _setExecutionTime(DateTime? initTime, DateTime? endTime) {
@@ -309,7 +348,7 @@ abstract class AsyncTask<P, R> {
   }
 
   /// Returns a [Future] to wait for the task result.
-  Future<R> waitResult() => _completer.future;
+  Future<R> waitResult() => _completerFuture;
 
   @override
   String toString() {
@@ -385,12 +424,34 @@ class AsyncTaskLoggerCaller {
   AsyncTaskLoggerCaller(AsyncTaskLogger? logger)
       : _logger = logger ?? defaultAsyncTaskLogger;
 
-  bool enabled = false;
+  static void _dummyLogger(String type, dynamic message,
+      [dynamic error, dynamic stackTrace]) {}
+
+  AsyncTaskLogger _actualLogger = _dummyLogger;
+
+  bool _enabled = false;
+
+  bool get enabled => _enabled;
+
+  set enabled(bool value) {
+    _enabled = value;
+
+    if (_enabled) {
+      _actualLogger = _logger;
+
+      if (_enabledExecution) {
+        _actualExecutionLogger = _logExecutionImpl;
+      } else {
+        _actualExecutionLogger = _dummyLogExecution;
+      }
+    } else {
+      _actualLogger = _dummyLogger;
+      _actualExecutionLogger = _dummyLogExecution;
+    }
+  } //bool enabled = false;
 
   void log(String type, dynamic message, [dynamic error, dynamic stackTrace]) {
-    if (enabled) {
-      _logger(type, message, error, stackTrace);
-    }
+    _actualLogger(type, message, error, stackTrace);
   }
 
   void logInfo(dynamic message) => log('INFO', message);
@@ -400,12 +461,31 @@ class AsyncTaskLoggerCaller {
   void logError(dynamic error, dynamic stackTrace) =>
       log('ERROR', null, error, stackTrace);
 
-  bool enabledExecution = false;
+  static void _dummyLogExecution(dynamic message, dynamic a, dynamic b) {}
+
+  void Function(dynamic message, dynamic a, dynamic b) _actualExecutionLogger =
+      _dummyLogExecution;
+
+  void _logExecutionImpl(dynamic message, dynamic a, dynamic b) {
+    _actualLogger('EXEC', '$message > $a > $b');
+  }
+
+  bool _enabledExecution = false;
+
+  bool get enabledExecution => _enabledExecution;
+
+  set enabledExecution(bool value) {
+    _enabledExecution = value;
+
+    if (_enabled && _enabledExecution) {
+      _actualExecutionLogger = _logExecutionImpl;
+    } else {
+      _actualExecutionLogger = _dummyLogExecution;
+    }
+  }
 
   void logExecution(dynamic message, dynamic a, dynamic b) {
-    if (enabledExecution) {
-      log('EXEC', '$message > $a > $b');
-    }
+    _actualExecutionLogger(message, a, b);
   }
 }
 
@@ -809,8 +889,7 @@ abstract class AsyncExecutorThread {
 
 class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   _AsyncExecutorSingleThread(
-      String executorName, AsyncTaskLoggerCaller logger, bool sequential)
-      : super(executorName, logger, sequential);
+      super.executorName, super.logger, super.sequential);
 
   final AsyncTaskPlatform _platform =
       AsyncTaskPlatform(AsyncTaskPlatformType.generic, 1);
@@ -886,7 +965,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
             _consumeSequentialQueue();
           });
 
-          task.execute();
+          _taskExecuteSafe(task);
         });
       } else {
         _sequentialQueue.add(task);
@@ -899,11 +978,17 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         task.addOnFinishAsyncTask(
             (asyncTask, result, error, stackTrace) => ++_executedTasksCount);
 
-        task.execute();
+        _taskExecuteSafe(task);
       });
     }
 
-    return task._completer.future;
+    return task._completerFuture;
+  }
+
+  void _taskExecuteSafe(AsyncTask<dynamic, dynamic> task) {
+    try {
+      task.execute();
+    } catch (_) {}
   }
 
   void _consumeSequentialQueue() {
@@ -924,7 +1009,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         _consumeSequentialQueue();
       });
 
-      task.execute();
+      _taskExecuteSafe(task);
     });
   }
 
@@ -945,7 +1030,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
 }
 
 class _AsyncTaskChannelPortLocal extends AsyncTaskChannelPort {
-  _AsyncTaskChannelPortLocal(AsyncTaskChannel channel) : super(channel);
+  _AsyncTaskChannelPortLocal(super.channel);
 
   @override
   void send<M>(M message, bool inExecutingContext) {
@@ -954,7 +1039,7 @@ class _AsyncTaskChannelPortLocal extends AsyncTaskChannelPort {
 }
 
 class AsyncExecutorClosedError extends AsyncExecutorError {
-  AsyncExecutorClosedError(dynamic cause) : super(cause);
+  AsyncExecutorClosedError(super.cause);
 }
 
 /// Error for [AsyncTask] execution.
@@ -965,12 +1050,28 @@ class AsyncExecutorError {
   final dynamic cause;
 
   /// The error stack-trace.
-  final dynamic stackTrace;
+  final Object? _stackTrace;
 
-  AsyncExecutorError(this.message, [this.cause, this.stackTrace]);
+  AsyncExecutorError(this.message, [this.cause, this._stackTrace]);
+
+  AsyncExecutorError copyWith(
+          {String? message, Object? cause, Object? stackTrace}) =>
+      AsyncExecutorError(message ?? this.message, cause ?? this.cause,
+          stackTrace ?? _stackTrace);
+
+  dynamic get stackTrace {
+    var s = _stackTrace;
+    if (s is String) {
+      return StackTrace.fromString(s);
+    } else if (s is Iterable<String>) {
+      return StackTrace.fromString(s.join('\n'));
+    } else {
+      return s;
+    }
+  }
 
   @override
-  String toString() {
-    return 'AsyncExecutorError{message: $message, cause: $cause, stackTrace: $stackTrace}';
-  }
+  String toString({bool full = true}) => full
+      ? 'AsyncExecutorError: $message\n-- Cause: $cause\n$stackTrace\n'
+      : 'AsyncExecutorError: $message';
 }

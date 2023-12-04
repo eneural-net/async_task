@@ -128,22 +128,93 @@ void main() {
     test('error(no taskTypeRegister)', () async {
       expect(() => AsyncExecutor(sequential: false, parallelism: 2),
           throwsA(isStateError));
-    });
+    }, skip: AsyncExecutor.maximumParallelism <= 1);
 
-    test('error(Task execution error)', () async {
+    test('error(AsyncTask execution error)', () async {
       var executor = AsyncExecutor(
           sequential: false, parallelism: 2, taskTypeRegister: _taskRegister);
+      print(executor);
+
+      executor.logger.enabled = true;
+      executor.logger.enabledExecution = true;
+
+      await executor.start();
+
+      var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
+
+      expect(
+          () => executor.execute(task1),
+          throwsA(
+            isA<AsyncExecutorError>()
+                .having((e) => e.message, 'message',
+                    contains("AsyncTask execution error"))
+                .having(
+                  (e) => e.cause,
+                  'cause',
+                  isA<StateError>().having(
+                    (e) => e.message,
+                    'message',
+                    contains("Counter `start` should be `> 0`: -1000"),
+                  ),
+                ),
+          ));
+    });
+
+    test('error(AsyncTask execution error + executor.close)', () async {
+      var executor = AsyncExecutor(
+          sequential: false, parallelism: 2, taskTypeRegister: _taskRegister);
+      print(executor);
+
+      executor.logger.enabled = true;
+      executor.logger.enabledExecution = true;
+
+      await executor.start();
+
+      var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
+
+      expect(
+          () => executor.execute(task1),
+          throwsA(
+            isA<AsyncExecutorError>()
+                .having((e) => e.message, 'message',
+                    contains("AsyncTask execution error"))
+                .having(
+                  (e) => e.cause,
+                  'cause',
+                  isA<StateError>().having(
+                    (e) => e.message,
+                    'message',
+                    contains("Counter `start` should be `> 0`: -1000"),
+                  ),
+                ),
+          ));
+
+      await executor.close();
+    });
+
+    test('error(AsyncTask execution error + parallelism: 0)', () async {
+      var executor = AsyncExecutor(
+          sequential: false, parallelism: 0, taskTypeRegister: _taskRegister);
       print(executor);
 
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
       expect(
           () => executor.execute(task1),
-          throwsA(isA<AsyncExecutorError>()
-              .having(
-                  (e) => e.message, 'message', contains("Task execution error"))
-              .having((e) => e.cause, 'cause',
-                  contains("Counter `start` should be `> 0`: -1000"))));
+          throwsA(
+            isA<AsyncExecutorError>()
+                .having((e) => e.message, 'message',
+                    contains("AsyncTask execution error"))
+                .having(
+                  (e) => e.cause,
+                  'cause',
+                  isA<StateError>().having(
+                    (e) => e.message,
+                    'message',
+                    contains("Counter `start` should be `> 0`: -1000"),
+                  ),
+                ),
+          ));
     });
   });
 }

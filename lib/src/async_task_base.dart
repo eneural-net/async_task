@@ -5,6 +5,7 @@ import 'async_task_channel.dart';
 import 'async_task_generic.dart'
     if (dart.library.isolate) 'async_task_isolate.dart';
 import 'async_task_shared_data.dart';
+import 'async_task_extension.dart';
 
 /// Status of an [AsyncTask].
 enum AsyncTaskStatus {
@@ -49,7 +50,25 @@ typedef OnFinishAsyncTask = void Function(
 /// - [P] is the [parameters] type.
 /// - [R] is the [result] type.
 abstract class AsyncTask<P, R> {
+  final Zone _zone = Zone.current;
+
+  /// The original [Zone] where this [AsyncTask] instance was created.
+  Zone get zone => _zone;
+
   final Completer<R> _completer = Completer<R>();
+
+  Future<R> get _completerFuture => _completer.future;
+
+  // Suppress `Unhandled exception` on `_completer`.
+  // The error suppression only happens if `_completer.completeError`
+  // and `_completer.future.then` are called from the same `Zone` (`_zone`).
+  void _suppressCompleteErrorUnhandled() {
+    _zone.run(() => _completer.future.suppressUnhandledError());
+  }
+
+  void _completeError(Object error, [StackTrace? stackTrace]) {
+    _zone.run(() => _completer.completeError(error, stackTrace));
+  }
 
   static final Expando<String> _taskTypeExpando = Expando();
 
@@ -87,7 +106,10 @@ abstract class AsyncTask<P, R> {
   bool get hasError => isFinished && _error != null;
 
   /// Executes this tasks immediately.
-  FutureOr<R> execute() {
+  FutureOr<R> execute() => executeAndCast<R>();
+
+  /// Alias for [execute], casting the result to [T].
+  FutureOr<T> executeAndCast<T>() {
     _initTime = DateTime.now();
 
     submitTime ??= _initTime;
@@ -95,19 +117,20 @@ abstract class AsyncTask<P, R> {
     try {
       var ret = run();
 
-      if (ret is Future) {
-        var future = ret as Future;
+      if (ret is Future<R>) {
+        Future<T>? ret2;
 
-        return future.then((result) {
+        return ret2 = ret.then((result) {
           _finish(result, endTime: DateTime.now());
-          return result;
+          return result as T;
         }, onError: (e, s) {
+          ret2?.suppressUnhandledError();
           _finishError(e, s, endTime: DateTime.now());
           throw e;
         });
       } else {
         _finish(ret, endTime: DateTime.now());
-        return ret;
+        return ret as T;
       }
     } catch (e, s) {
       _finishError(e, s, endTime: DateTime.now());
@@ -166,11 +189,21 @@ abstract class AsyncTask<P, R> {
   void _finishError(Object error, StackTrace? stackTrace,
       {DateTime? initTime, DateTime? endTime}) {
     _setExecutionTime(initTime, endTime);
-    _error = error;
+
+    var error2 = error is AsyncExecutorError
+        ? error
+        : AsyncExecutorError('AsyncTask execution error', error, stackTrace);
+
+    _error = error2;
     _finished = true;
 
-    _callOnFinishAsyncTask(null, error, stackTrace);
-    _completer.completeError(error, stackTrace);
+    _callOnFinishAsyncTask(null, error2, stackTrace);
+
+    assert(!_completer.isCompleted);
+
+    _suppressCompleteErrorUnhandled();
+
+    _completeError(error2, stackTrace);
 
     _finishChannel();
   }
@@ -315,7 +348,7 @@ abstract class AsyncTask<P, R> {
   }
 
   /// Returns a [Future] to wait for the task result.
-  Future<R> waitResult() => _completer.future;
+  Future<R> waitResult() => _completerFuture;
 
   @override
   String toString() {
@@ -932,7 +965,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
             _consumeSequentialQueue();
           });
 
-          task.execute();
+          _taskExecuteSafe(task);
         });
       } else {
         _sequentialQueue.add(task);
@@ -945,11 +978,17 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         task.addOnFinishAsyncTask(
             (asyncTask, result, error, stackTrace) => ++_executedTasksCount);
 
-        task.execute();
+        _taskExecuteSafe(task);
       });
     }
 
-    return task._completer.future;
+    return task._completerFuture;
+  }
+
+  void _taskExecuteSafe(AsyncTask<dynamic, dynamic> task) {
+    try {
+      task.execute();
+    } catch (_) {}
   }
 
   void _consumeSequentialQueue() {
@@ -970,7 +1009,7 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         _consumeSequentialQueue();
       });
 
-      task.execute();
+      _taskExecuteSafe(task);
     });
   }
 

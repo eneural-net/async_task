@@ -607,11 +607,21 @@ class _IsolateThread {
       var error = ret.error;
       var stackTrace = ret.stackTrace;
 
-      var error2 = AsyncExecutorError(
-          'Task execution error at $this', error, stackTrace);
+      var error2 = error is AsyncExecutorError
+          ? (error.message == 'AsyncTask execution error'
+              ? error.copyWith(message: 'AsyncTask execution error at $this')
+              : error)
+          : AsyncExecutorError(
+              'AsyncTask execution error at $this', error, stackTrace);
+
+      var error2StackTrace = error2.stackTrace;
+
+      var stackTrace2 = error2StackTrace is StackTrace
+          ? error2StackTrace
+          : StackTrace.current;
 
       parent._onDispatchTaskFinished(
-          taskWrapper, this, null, error2, StackTrace.current);
+          taskWrapper, this, null, error2, stackTrace2);
     } else {
       throw StateError("Unknown reply: $ret");
     }
@@ -997,10 +1007,16 @@ class _Isolate {
         }
       });
 
-      task.execute();
+      _taskExecuteSafe(task);
     } catch (e, s) {
       _processTaskReplyError(instantiatedTask, e, s, replyPort);
     }
+  }
+
+  void _taskExecuteSafe(AsyncTask<dynamic, dynamic> task) {
+    try {
+      task.execute();
+    } catch (_) {}
   }
 
   void _processTaskReplyResult(
@@ -1012,14 +1028,34 @@ class _Isolate {
 
   void _processTaskReplyError(
       AsyncTask? task, Object error, StackTrace? s, SendPort replyPort) {
+    var lines = _stackTraceToLines(s);
+
+    try {
+      replyPort.send(
+        _IsolateReplyError(error, lines),
+      );
+    } on ArgumentError {
+      var error2 = error is AsyncExecutorError
+          ? error.copyWith(
+              cause: error.cause?.toString(),
+              stackTrace: _stackTraceToLines(error.stackTrace))
+          : '$error';
+
+      replyPort.send(
+        _IsolateReplyError(error2, lines),
+      );
+    }
+  }
+
+  List<String>? _stackTraceToLines(StackTrace? s) {
+    if (s == null) return null;
+
     var lines = '$s'.split(RegExp(r'[\r\n]'));
     if (lines.last.isEmpty) {
       lines.removeLast();
     }
 
-    replyPort.send(
-      _IsolateReplyError('$error', lines),
-    );
+    return lines;
   }
 
   final Map<String, Completer<SharedData>> _requestingSharedDatas =
@@ -1203,7 +1239,7 @@ final class _IsolateReplyResult extends _IsolateReply {
 }
 
 final class _IsolateReplyError extends _IsolateReply {
-  final Object? error;
+  final Object error;
   final List<String>? stackTrace;
 
   const _IsolateReplyError(this.error, this.stackTrace);

@@ -569,3 +569,9 @@ extension Float64x2ListExtension on Float64x2List {
 
   S serialize<S>() => toDoubles() as S;
 }
+
+extension SuppressFutureUnhandledErrorExtension on Future {
+  void suppressUnhandledError() {
+    then((_) => null, onError: (_) => null);
+  }
+}

@@ -1,5 +1,4 @@
 @Timeout(Duration(seconds: 450))
-
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
 import 'package:test/test.dart';
@@ -129,6 +128,17 @@ Future<AsyncExecutor> _testParallelismImpl(
   expect(echoes.successfulTasks.length, equals(0));
   expect(echoes.errorTasks.length, equals(0));
 
+  var onFinishAsyncTask = <(
+    _Echo asyncTask,
+    Object? result,
+    Object? error,
+    StackTrace? stackTrace
+  )>[];
+
+  echoes.first.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
+    onFinishAsyncTask.add((asyncTask as _Echo, result, error, stackTrace));
+  });
+
   var executions = executor.executeAll(echoes);
 
   expect(executions.length, equals(echoes.length));
@@ -168,6 +178,13 @@ Future<AsyncExecutor> _testParallelismImpl(
   expect(echoes.errorTasks.length, equals(0));
 
   expect(results.length, equals(echoes.length));
+
+  expect(onFinishAsyncTask.length, equals(1));
+
+  expect(
+    onFinishAsyncTask.map((e) => (e.$1.multiplier, '${e.$2}')).toList(),
+    equals([(1, '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]')]),
+  );
 
   print('Echos results: $results');
 

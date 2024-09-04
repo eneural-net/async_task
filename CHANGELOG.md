@@ -1,3 +1,10 @@
+## 1.1.2
+
+- async_extension: ^1.2.12
+- ffi: ^2.1.3
+- test: ^1.25.8
+- coverage: ^1.9.2
+
 ## 1.1.1
 
 - Optimize `AsyncTaskLoggerCaller`:

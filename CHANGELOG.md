@@ -1,4 +1,4 @@
-## 1.1.3
+## 1.1.2
 
 - `lib/src/async_task_isolate.dart`:
   - `_Isolate` class `_handleMessage` method: removed default case that threw `StateError` on unhandled messages (not needed in Dart 3.6+).
@@ -13,7 +13,7 @@
     - `test` to ^1.29.0
     - `coverage` to ^1.15.0
 
-## 1.1.2
+## 1.1.2.beta
 
 - async_extension: ^1.2.12
 - ffi: ^2.1.3

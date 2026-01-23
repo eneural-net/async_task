@@ -800,8 +800,6 @@ class _Isolate {
           replyPort.send(true);
           break;
         }
-      default:
-        throw StateError("Can't handle message: $msg");
     }
   }
 

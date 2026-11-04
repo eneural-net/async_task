@@ -236,6 +236,11 @@ void main() {
       check(<int>{1, 2});
       check(<String, Object>{'a': 1, 'b': 'x'});
       check(<String, int>{'a': 1});
+      check(<String, double>{'a': 1.5});
+      check(<String, num>{'a': 1, 'b': 1.5});
+      check(<String, bool>{'a': true});
+      check(<String, int?>{'a': null});
+      check(<Object, Object>{1: 'a', 'b': 2});
       check(<String, String?>{'a': null});
       check(<int, String>{1: 'a'});
       check(<String, dynamic>{'a': 1});

@@ -643,19 +643,32 @@ Future<Set<String>> _aliveIsolates(
   vm_service.VmService vmService,
   Set<String>? names,
 ) async {
+  var isolates = await _currentGroupIsolates(vmService);
+  return isolates
+      .map((i) => i.name ?? '')
+      .where((n) => n.startsWith('async_task/_IsolateThread/'))
+      .where((n) => names == null || names.contains(n))
+      .toSet();
+}
+
+/// Returns the isolates of the current isolate group.
+Future<List<vm_service.IsolateRef>> _currentGroupIsolates(
+  vm_service.VmService vmService,
+) async {
   var isolateId = Service.getIsolateId(Isolate.current)!;
   var vm = await vmService.getVM();
 
   for (var groupRef in vm.isolateGroups ?? <vm_service.IsolateGroupRef>[]) {
-    var group = await vmService.getIsolateGroup(groupRef.id!);
-    var isolates = group.isolates ?? <vm_service.IsolateRef>[];
-    if (!isolates.any((i) => i.id == isolateId)) continue;
+    vm_service.IsolateGroup group;
+    try {
+      group = await vmService.getIsolateGroup(groupRef.id!);
+    } on vm_service.SentinelException {
+      // Exited after `getVM` (for example, of another test suite):
+      continue;
+    }
 
-    return isolates
-        .map((i) => i.name ?? '')
-        .where((n) => n.startsWith('async_task/_IsolateThread/'))
-        .where((n) => names == null || names.contains(n))
-        .toSet();
+    var isolates = group.isolates ?? <vm_service.IsolateRef>[];
+    if (isolates.any((i) => i.id == isolateId)) return isolates;
   }
 
   throw StateError("Can't find the current isolate group");
@@ -667,20 +680,10 @@ Future<int> _isolateReceivePorts(
   vm_service.VmService vmService,
   String name,
 ) async {
-  var isolateId = Service.getIsolateId(Isolate.current)!;
-  var vm = await vmService.getVM();
-
-  for (var groupRef in vm.isolateGroups ?? <vm_service.IsolateGroupRef>[]) {
-    var group = await vmService.getIsolateGroup(groupRef.id!);
-    var isolates = group.isolates ?? <vm_service.IsolateRef>[];
-    if (!isolates.any((i) => i.id == isolateId)) continue;
-
-    var isolate = isolates.singleWhere((i) => i.name == name);
-    var ports = await vmService.getPorts(isolate.id!);
-    return ports.ports?.length ?? 0;
-  }
-
-  throw StateError("Can't find the current isolate group");
+  var isolates = await _currentGroupIsolates(vmService);
+  var isolate = isolates.singleWhere((i) => i.name == name);
+  var ports = await vmService.getPorts(isolate.id!);
+  return ports.ports?.length ?? 0;
 }
 
 /// Polls (up to a generous deadline) until the [names] isolates (or all the

@@ -281,10 +281,23 @@ Future<vm_service.IsolateGroup> _resolveIsolateGroup(
 ) async {
   var isolateGroupsIDs = vm.isolateGroups!.map((e) => e.id!);
   var isolateGroups = await Future.wait(
-    isolateGroupsIDs.map((gID) => vmService.getIsolateGroup(gID)),
+    isolateGroupsIDs.map((gID) => _getIsolateGroup(vmService, gID)),
   );
-  var vmIsolateGroup = isolateGroups.firstWhere(
+  var vmIsolateGroup = isolateGroups.nonNulls.firstWhere(
     (g) => g.isolates?.where((i) => i.id == isolateID).isNotEmpty ?? false,
   );
   return vmIsolateGroup;
+}
+
+/// Returns `null` for an isolate group that already exited (between `getVM`
+/// and this call), like the ones of the other test suites running in parallel.
+Future<vm_service.IsolateGroup?> _getIsolateGroup(
+  vm_service.VmService vmService,
+  String isolateGroupId,
+) async {
+  try {
+    return await vmService.getIsolateGroup(isolateGroupId);
+  } on vm_service.SentinelException {
+    return null;
+  }
 }

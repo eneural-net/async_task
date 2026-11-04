@@ -253,6 +253,41 @@ void main() {
       );
     });
 
+    test('task failing in the isolate carries its execution times', () async {
+      var before = DateTime.now();
+
+      var task = _FailingRunTask();
+      await expectLater(
+        executor.execute(task),
+        throwsA(
+          isA<AsyncExecutorError>().having(
+            (e) => e.cause,
+            'cause',
+            isA<StateError>(),
+          ),
+        ),
+      );
+
+      var after = DateTime.now();
+
+      // Were `null` (the error reply carried no times):
+      expect(task.initTime, isNotNull);
+      expect(task.endTime, isNotNull);
+      expect(task.initTime!.isBefore(before), isFalse);
+      expect(task.endTime!.isBefore(task.initTime!), isFalse);
+      expect(task.endTime!.isAfter(after), isFalse);
+      expect(task.executionTime, isNotNull);
+
+      // Failed before executing (instantiation in the isolate): no times.
+      var notExecuted = _FailingInstantiateTask(false);
+      await expectLater(
+        executor.execute(notExecuted),
+        throwsA(isA<AsyncExecutorError>()),
+      );
+      expect(notExecuted.initTime, isNull);
+      expect(notExecuted.endTime, isNull);
+    });
+
     test('error with a cause that cannot be sent between isolates', () async {
       await expectLater(
         executor.execute(_UnsendableExecutorErrorTask()),
@@ -342,6 +377,207 @@ void main() {
       }
     });
 
+    test('execute while closing, before any isolate was spawned', () async {
+      var executor = AsyncExecutor(
+        parallelism: 1,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      await executor.start();
+      expect(executor.info.workers, equals(0));
+
+      var closing = executor.close();
+      expect(executor.isClosing, isTrue);
+
+      // No task to wait for: the executor is already closing its isolates.
+      // Was failing with an `IntegerDivisionByZeroException` (no isolates).
+      expect(
+        () => executor.execute(_LoadTask(1, {})),
+        throwsA(isA<AsyncExecutorClosedError>()),
+      );
+
+      expect(await closing, isTrue);
+      expect(executor.info.workers, equals(0));
+
+      expect(
+        () => executor.execute(_LoadTask(2, {})),
+        throwsA(isA<AsyncExecutorClosedError>()),
+      );
+    });
+
+    test('execute while closing the isolates', () async {
+      var executor = AsyncExecutor(
+        parallelism: 2,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      expect(
+        await executor.execute(_LoadTask(2, {'a': SharedData<int, int>(3)})),
+        equals([6, 1]),
+      );
+
+      var closing = executor.close();
+
+      // No running task: the isolates are being closed.
+      // Was submitted to a closing isolate (never completing).
+      expect(
+        () => executor.execute(_LoadTask(3, {})),
+        throwsA(isA<AsyncExecutorClosedError>()),
+      );
+
+      expect(await closing, isTrue);
+      expect(executor.info.workers, equals(0));
+    });
+
+    test('execute while waiting the running tasks to close', () async {
+      var executor = AsyncExecutor(
+        parallelism: 2,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      // Waits for a channel message: running until replied.
+      var runningTask = _ChannelLoadTask(2, {});
+      var running = executor.execute(runningTask);
+      var channel = (await runningTask.channel())!;
+
+      var closing = executor.close();
+      expect(executor.isClosing, isTrue);
+
+      // Still accepted while `close` waits for the running task:
+      var late = executor.execute(_LoadTask(5, {'a': SharedData<int, int>(2)}));
+
+      expect(await channel.sendAndWaitResponse<int, int>(10), equals(20));
+      expect((await running)[0], equals(0));
+      // No new isolate is spawned while closing: executed in the same isolate.
+      expect(await late, equals([10, 1]));
+      expect(executor.info.workers, equals(1));
+      expect(await closing, isTrue);
+      expect(executor.info.workers, equals(0));
+      expect(
+        () => executor.execute(_LoadTask(6, {})),
+        throwsA(isA<AsyncExecutorClosedError>()),
+      );
+    });
+
+    test('channel port of a task failing to instantiate is released', () async {
+      var vmService = await _connectVmService();
+      if (vmService == null) {
+        markTestSkipped('VM Service not available');
+        return;
+      }
+
+      var executor = AsyncExecutor(
+        parallelism: 1,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      try {
+        Future<void> fail() => expectLater(
+          executor.execute(_FailingInstantiateTask(true)),
+          throwsA(
+            isA<AsyncExecutorError>().having(
+              (e) => e.cause,
+              'cause',
+              isA<StateError>().having(
+                (e) => e.message,
+                'message',
+                equals('instantiate failure'),
+              ),
+            ),
+          ),
+        );
+
+        // Warm up the isolate ports pool:
+        await fail();
+
+        var name =
+            'async_task/_IsolateThread/${executor.info.threads.single.id}';
+        var ports0 = await _isolateReceivePorts(vmService, name);
+
+        for (var i = 0; i < 20; ++i) {
+          await fail();
+        }
+
+        // Was one leaked port per failed task:
+        var ports1 = await _isolateReceivePorts(vmService, name);
+        expect(ports1, equals(ports0));
+
+        // The isolate is still usable, also with channels:
+        var task = _ChannelLoadTask(4, {});
+        var execution = executor.execute(task);
+        var channel = (await task.channel())!;
+        expect(await channel.sendAndWaitResponse<int, int>(3), equals(12));
+        expect(await execution, equals([0, 0]));
+        expect(await _isolateReceivePorts(vmService, name), equals(ports0));
+      } finally {
+        await executor.close();
+        await vmService.dispose();
+      }
+    });
+
+    test('task with parameters that cannot be sent to the isolate', () async {
+      var executor = AsyncExecutor(
+        parallelism: 1,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      // Was never completing (the send error was thrown by `execute`, or
+      // unhandled while spawning the isolate), and `close` never returned.
+      await expectLater(
+        executor.execute(_UnsendableParametersTask()),
+        throwsA(
+          isA<AsyncExecutorError>()
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith('AsyncTask submit error at _IsolateThread#'),
+              )
+              .having((e) => e.cause, 'cause', isA<ArgumentError>()),
+        ),
+      );
+
+      // The isolate is still usable:
+      expect(
+        await executor.execute(_LoadTask(2, {'a': SharedData<int, int>(3)})),
+        equals([6, 1]),
+      );
+      await expectLater(
+        executor.execute(_UnsendableParametersTask()),
+        throwsA(isA<AsyncExecutorError>()),
+      );
+
+      expect(await executor.close().timeout(Duration(seconds: 30)), isTrue);
+    });
+
+    test('task with throwing parameters', () async {
+      var executor = AsyncExecutor(
+        parallelism: 1,
+        taskTypeRegister: _taskTypeRegister,
+      );
+
+      // Not started: fails the task `Future`.
+      await expectLater(
+        executor.execute(_ThrowingParametersTask()),
+        throwsA(
+          isA<AsyncExecutorError>().having(
+            (e) => e.cause,
+            'cause',
+            isA<StateError>(),
+          ),
+        ),
+      );
+
+      // Started: throws (as before).
+      await executor.start();
+      expect(
+        () => executor.execute(_ThrowingParametersTask()),
+        throwsStateError,
+      );
+
+      // Was never returning (counted as an executing task):
+      expect(await executor.close().timeout(Duration(seconds: 30)), isTrue);
+    });
+
     test('isolates are terminated on close', () async {
       var vmService = await _connectVmService();
       if (vmService == null) {
@@ -425,6 +661,28 @@ Future<Set<String>> _aliveIsolates(
   throw StateError("Can't find the current isolate group");
 }
 
+/// Returns the number of open receive ports of the executor isolate [name]
+/// (in the current isolate group).
+Future<int> _isolateReceivePorts(
+  vm_service.VmService vmService,
+  String name,
+) async {
+  var isolateId = Service.getIsolateId(Isolate.current)!;
+  var vm = await vmService.getVM();
+
+  for (var groupRef in vm.isolateGroups ?? <vm_service.IsolateGroupRef>[]) {
+    var group = await vmService.getIsolateGroup(groupRef.id!);
+    var isolates = group.isolates ?? <vm_service.IsolateRef>[];
+    if (!isolates.any((i) => i.id == isolateId)) continue;
+
+    var isolate = isolates.singleWhere((i) => i.name == name);
+    var ports = await vmService.getPorts(isolate.id!);
+    return ports.ports?.length ?? 0;
+  }
+
+  throw StateError("Can't find the current isolate group");
+}
+
 /// Polls (up to a generous deadline) until the [names] isolates (or all the
 /// executor isolates, if `null`) terminate. Returns the isolates still alive.
 Future<Set<String>> _waitIsolatesTermination(
@@ -446,7 +704,86 @@ List<AsyncTask> _taskTypeRegister() => <AsyncTask>[
   _NullLoadTask(SharedData<int, int>(0)),
   _UnsendableExecutorErrorTask(),
   _LoadCountTask(),
+  _FailingRunTask(),
+  _FailingInstantiateTask(false),
 ];
+
+/// [parameters] can't be sent to another isolate.
+class _UnsendableParametersTask extends AsyncTask<Object, int> {
+  @override
+  AsyncTask<Object, int> instantiate(
+    Object parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _UnsendableParametersTask();
+
+  @override
+  Object parameters() => _Unsendable(RawReceivePort()..close());
+
+  @override
+  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel();
+
+  @override
+  FutureOr<int> run() => 0;
+}
+
+/// [parameters] throws (called in the main side).
+class _ThrowingParametersTask extends AsyncTask<int, int> {
+  @override
+  AsyncTask<int, int> instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _ThrowingParametersTask();
+
+  @override
+  int parameters() => throw StateError('parameters failure');
+
+  @override
+  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel();
+
+  @override
+  FutureOr<int> run() => 0;
+}
+
+/// Throws in [run], after a delay (in the isolate).
+class _FailingRunTask extends AsyncTask<int, int> {
+  @override
+  AsyncTask<int, int> instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _FailingRunTask();
+
+  @override
+  int parameters() => 0;
+
+  @override
+  FutureOr<int> run() => Future.delayed(
+    Duration(milliseconds: 5),
+    () => throw StateError('run failure'),
+  );
+}
+
+/// [instantiate] throws (it's called in the isolate, on the registered task).
+class _FailingInstantiateTask extends AsyncTask<int, int> {
+  final bool withChannel;
+
+  _FailingInstantiateTask(this.withChannel);
+
+  @override
+  AsyncTask<int, int> instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => throw StateError('instantiate failure');
+
+  @override
+  int parameters() => withChannel ? 1 : 0;
+
+  @override
+  AsyncTaskChannel? channelInstantiator() =>
+      withChannel ? AsyncTaskChannel() : null;
+
+  @override
+  FutureOr<int> run() => 0;
+}
 
 /// `SharedData` loads performed in the current isolate.
 int _loads = 0;

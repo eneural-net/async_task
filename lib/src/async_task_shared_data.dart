@@ -72,8 +72,23 @@ abstract class SerializableData<D, S> {
   /// Creates generic copy for [SerializableData] and basic Dart types:
   /// primitive values (null, num, bool, double, String),
   /// lists and maps whose elements are any of these.
+  ///
+  /// Collections are deep copied, keeping their types:
+  /// - [List], [Set] and [Iterable] copies keep the element type of [data]
+  ///   (an [Iterable] is copied to a [List] and a [Set] to a [LinkedHashSet]).
+  /// - [Map] and [MapEntry] copies keep the key/value types of [data] when they
+  ///   are `String`, `int`, `double`, `num`, `bool` (also nullable),
+  ///   `Object` or `Object?`/`dynamic` (only the keys: `String`, `int`, `Object`
+  ///   or `Object?`). Dart can't create a `Map` with the type arguments of another
+  ///   `Map`: with other types (for example a `Map<String, List<int>>`) the copy
+  ///   has the closest supported types (`Map<String, Object>`), and a [StateError]
+  ///   is thrown if it's not a [D].
+  ///   A [MapEntry] with a key and value not needing a copy (immutable
+  ///   values) is returned as is.
   static D copyGeneric<D>(D data) {
-    if (data is SerializableData) {
+    if (data == null) {
+      return data;
+    } else if (data is SerializableData) {
       return data.copy() as D;
     } else if (data is int) {
       return data;
@@ -92,7 +107,7 @@ abstract class SerializableData<D, S> {
     } else if (data is Float64x2) {
       return data;
     } else if (data is MapEntry) {
-      return MapEntry(copyGeneric(data.key), copyGeneric(data.value)) as D;
+      return _checkCopyType<D>(data, _copyMapEntry(data));
     } else if (data is Uint8List) {
       return Uint8List.fromList(data) as D;
     } else if (data is Uint16List) {
@@ -116,18 +131,60 @@ abstract class SerializableData<D, S> {
     } else if (data is Float64x2List) {
       return Float64x2List.fromList(data) as D;
     } else if (data is List) {
-      return data.deepCopy() as D;
+      return _checkCopyType<D>(data, _copyIterable(data));
     } else if (data is Map) {
-      return data.deepCopy() as D;
+      return _checkCopyType<D>(data, _copyMap(data));
     } else if (data is Set) {
-      return data.deepCopy() as D;
+      // `toSet` of a `List` with the element type of `data`:
+      return _checkCopyType<D>(data, _copyIterable(data).toSet());
     } else if (data is Iterable) {
-      return data.deepCopy() as D;
+      return _checkCopyType<D>(data, _copyIterable(data));
     } else {
       throw StateError(
         "Can't perform a generic copy on type: ${data.runtimeType}",
       );
     }
+  }
+
+  static D _checkCopyType<D>(Object data, Object copy) {
+    if (copy is D) return copy as D;
+    throw StateError(
+      "Can't perform a generic copy of `${data.runtimeType}` to `$D` "
+      "(copied as `${copy.runtimeType}`)",
+    );
+  }
+
+  /// Deep copy of [data] to a [List] with the element type of [data].
+  static List _copyIterable(Iterable data) {
+    // `toList` creates a `List` with the runtime element type of `data`
+    // (a generic method called with `data` static type would use `dynamic`):
+    var copy = data.toList();
+    for (var i = 0; i < copy.length; ++i) {
+      // The copy of an element keeps its type:
+      copy[i] = copyGeneric<Object?>(copy[i]);
+    }
+    return copy;
+  }
+
+  static Map _copyMap(Map data) {
+    var copier = _TypedCopier._copiers.firstWhere((c) => c.isMap(data));
+    return copier.copyMap(data);
+  }
+
+  static MapEntry _copyMapEntry(MapEntry data) {
+    var key = data.key;
+    var value = data.value;
+
+    var keyCopy = copyGeneric<Object?>(key);
+    var valueCopy = copyGeneric<Object?>(value);
+
+    // `MapEntry` is immutable:
+    if (identical(keyCopy, key) && identical(valueCopy, value)) {
+      return data;
+    }
+
+    var copier = _TypedCopier._copiers.firstWhere((c) => c.isMapEntry(data));
+    return copier.newMapEntry(keyCopy, valueCopy);
   }
 
   /// Generic serialization of [SerializableData] and basic Dart types:
@@ -448,4 +505,49 @@ class AsyncExecutorSharedDataInfo {
         ', disposed: $disposedSharedDataSignatures'
         ' }';
   }
+}
+
+/// Copies a [Map] or a [MapEntry] to a `Map<K, V>`/`MapEntry<K, V>`.
+///
+/// Dart can't create a [Map] with the (runtime) type arguments of another
+/// [Map] (as `List.toList` does for a [List]): [_copiers] are the supported
+/// types, from the most specific to the least specific.
+final class _TypedCopier<K, V> {
+  const _TypedCopier();
+
+  bool isMap(Map data) => data is Map<K, V>;
+
+  bool isMapEntry(MapEntry data) => data is MapEntry<K, V>;
+
+  Map<K, V> copyMap(Map data) => <K, V>{
+    for (var e in data.entries)
+      SerializableData.copyGeneric<Object?>(e.key) as K:
+          SerializableData.copyGeneric<Object?>(e.value) as V,
+  };
+
+  MapEntry<K, V> newMapEntry(Object? key, Object? value) =>
+      MapEntry<K, V>(key as K, value as V);
+
+  static List<_TypedCopier> _copiersOfKey<K>() => [
+    _TypedCopier<K, String>(),
+    _TypedCopier<K, int>(),
+    _TypedCopier<K, double>(),
+    _TypedCopier<K, num>(),
+    _TypedCopier<K, bool>(),
+    _TypedCopier<K, String?>(),
+    _TypedCopier<K, int?>(),
+    _TypedCopier<K, double?>(),
+    _TypedCopier<K, num?>(),
+    _TypedCopier<K, bool?>(),
+    _TypedCopier<K, Object>(),
+    _TypedCopier<K, Object?>(),
+  ];
+
+  /// The last one (`<Object?, Object?>`) accepts any [Map]/[MapEntry].
+  static final List<_TypedCopier> _copiers = [
+    ..._copiersOfKey<String>(),
+    ..._copiersOfKey<int>(),
+    ..._copiersOfKey<Object>(),
+    ..._copiersOfKey<Object?>(),
+  ];
 }

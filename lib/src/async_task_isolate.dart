@@ -135,7 +135,11 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
   }
 
   FutureOr<_IsolateThread> _catchNotFreeThread() {
-    if (_threads.length < totalThreads && _closing == null) {
+    // While closing no new `Isolate` is spawned, unless there's none:
+    // `close` waits for the executing tasks before closing the `Isolate`s
+    // (a task is never dispatched to a closing `Isolate`, see `execute`).
+    if (_threads.isEmpty ||
+        (_threads.length < totalThreads && _closing == null)) {
       var newThread = _IsolateThread(
         executorName,
         taskRegister,
@@ -168,10 +172,14 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
     AsyncExecutorSharedDataInfo? sharedDataInfo,
   }) {
     if (_closed) {
-      throw AsyncExecutorClosedError(null);
+      throw AsyncExecutorClosedError('Not ready: executor closed.');
+    } else if (_closingThreads) {
+      // `close` is no longer waiting for executing tasks: the `Isolate`s
+      // are being closed and can't execute new tasks.
+      throw AsyncExecutorClosedError(
+        'Not ready: executor closing (no executing task to wait for).',
+      );
     }
-
-    _executingTasks++;
 
     bindTask(task);
 
@@ -187,11 +195,22 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
       ),
     );
 
+    _TaskWrapper<P, R> taskWrapper;
+    try {
+      // Calls `task.parameters()` and `task.sharedData()`:
+      taskWrapper = _TaskWrapper<P, R>(task, taskChannel, sharedDataInfo);
+    } catch (_) {
+      // Not submitted: releases the channel port.
+      taskChannel?.close();
+      rethrow;
+    }
+
+    // Only counted when it will finish (`close` waits for it):
+    _executingTasks++;
+
     task.addOnFinishAsyncTask(
       (asyncTask, result, error, stackTrace) => _onFinishTask(),
     );
-
-    var taskWrapper = _TaskWrapper<P, R>(task, taskChannel, sharedDataInfo);
 
     if (sequential &&
         _threads.length >= totalThreads &&
@@ -326,6 +345,10 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
   Completer<bool>? _closing;
 
+  /// `true` after [close] stops waiting for the executing tasks
+  /// and starts closing the `Isolate`s: no new task is accepted.
+  bool _closingThreads = false;
+
   Completer<bool>? _waitingNoExecutingTasks;
 
   @override
@@ -344,14 +367,23 @@ class _AsyncExecutorMultiThread extends AsyncExecutorThread {
 
     logger.logInfo('Closing $this ; Isolates: $_threads');
 
-    if (_executingTasks > 0) {
+    // Tasks executed while waiting are also waited for
+    // (a task can be executed between the completion and the resume):
+    while (_executingTasks > 0) {
       logger.logInfo(
         'Waiting for $_executingTasks tasks to execute before finishing isolates...',
       );
 
-      _waitingNoExecutingTasks = Completer<bool>();
-      await _waitingNoExecutingTasks!.future;
+      var waitingNoExecutingTasks = _waitingNoExecutingTasks =
+          Completer<bool>();
+      await waitingNoExecutingTasks.future;
     }
+
+    _waitingNoExecutingTasks = null;
+
+    // No `await` since the last check of `_executingTasks`:
+    // from now on `execute` rejects new tasks.
+    _closingThreads = true;
 
     await Future.wait(_threads.map((t) => t.close()));
 
@@ -588,6 +620,39 @@ class _IsolateThread {
       (ret) => _onSubmitResponse(taskWrapper, parent, responsePort, ret),
     );
 
+    var newSentSharedDataSignatures = <String>[];
+
+    try {
+      _submitImpl(
+        taskWrapper,
+        parent,
+        responsePort,
+        newSentSharedDataSignatures,
+      );
+    } catch (e, s) {
+      // Not sent to the `Isolate` (for example, parameters that can't be sent
+      // between isolates or a `SharedData` serialization error):
+      // the `Isolate` will never reply.
+      _receivePortPool.releasePort(responsePort);
+      _sentSharedDataSignatures.removeAll(newSentSharedDataSignatures);
+      ++_executedTasks;
+
+      parent._onDispatchTaskFinished(
+        taskWrapper,
+        this,
+        null,
+        AsyncExecutorError('AsyncTask submit error at $this', e, s),
+        s,
+      );
+    }
+  }
+
+  void _submitImpl(
+    _TaskWrapper taskWrapper,
+    _AsyncExecutorMultiThread parent,
+    _ReceivePort responsePort,
+    List<String> newSentSharedDataSignatures,
+  ) {
     var sharedData = taskWrapper.sharedData;
 
     if (sharedData != null) {
@@ -600,7 +665,8 @@ class _IsolateThread {
           return MapEntry(k, signature);
         } else {
           taskWrapper.sharedDataInfo?.sentSharedDataSignatures.add(signature);
-          _sentSharedDataSignatures.add(sd.signature);
+          _sentSharedDataSignatures.add(signature);
+          newSentSharedDataSignatures.add(signature);
 
           sentSharedData++;
 
@@ -668,6 +734,9 @@ class _IsolateThread {
     } else if (ret is _IsolateReplyError) {
       _receivePortPool.releasePort(responsePort);
       ++_executedTasks;
+
+      taskWrapper.initTime = ret.initTime;
+      taskWrapper.endTime = ret.endTime;
 
       var error = ret.error;
       var stackTrace = ret.stackTrace;
@@ -1136,6 +1205,11 @@ class _Isolate {
     SendPort replyPort,
   ) {
     AsyncTask? instantiatedTask;
+    // `taskChannelReceivePort` while not owned by the task channel
+    // (that releases it when closed) or released.
+    var unownedTaskChannelPort = taskChannelReceivePort;
+    // The channel that took the ownership of `taskChannelReceivePort`.
+    AsyncTaskChannel? taskChannel;
 
     try {
       var taskRegistered = _getRegisteredTask(taskType);
@@ -1146,22 +1220,37 @@ class _Isolate {
 
       task.submitTime = submitTime;
 
-      task.resolveChannel(
-        (t, c) => c.initialize(
-          t,
-          _AsyncTaskChannelPortIsolate(
-            c,
-            _receivePortPool,
-            taskChannelReceivePort!,
-            true,
-            taskChannelSendPort,
-          ),
-        ),
-      );
+      if (taskChannelReceivePort != null) {
+        task.resolveChannel((t, c) {
+          c.initialize(
+            t,
+            _AsyncTaskChannelPortIsolate(
+              c,
+              _receivePortPool,
+              taskChannelReceivePort,
+              true,
+              taskChannelSendPort,
+            ),
+          );
+          taskChannel = c;
+          unownedTaskChannelPort = null;
+        });
 
-      // Channel initialized: now the main side can send messages to it.
-      if (taskChannelSendPort != null) {
-        taskChannelSendPort.send(taskChannelReceivePort!.sendPort);
+        if (taskChannel == null) {
+          // No channel in the `Isolate` (`channelInstantiator` returned `null`),
+          // but with a channel in the main side: the port is not used.
+          unownedTaskChannelPort = null;
+          _releaseTaskChannelPort(taskChannelReceivePort);
+        } else {
+          // Channel initialized: now the main side can send messages to it.
+          taskChannelSendPort?.send(taskChannelReceivePort.sendPort);
+        }
+      } else {
+        task.resolveChannel((t, c) {
+          throw StateError(
+            'Task with a channel in the `Isolate`, but without a channel in the main side: $taskType',
+          );
+        });
       }
 
       task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
@@ -1174,6 +1263,12 @@ class _Isolate {
 
       _taskExecuteSafe(task);
     } catch (e, s) {
+      // Failed before the execution (`_taskExecuteSafe` doesn't throw):
+      // the task channel port wouldn't be released by the task finish
+      // (closing its channel).
+      taskChannel?.close();
+      _releaseTaskChannelPort(unownedTaskChannelPort);
+
       _processTaskReplyError(instantiatedTask, e, s, replyPort);
     }
   }
@@ -1200,8 +1295,12 @@ class _Isolate {
   ) {
     var lines = _stackTraceToLines(s);
 
+    // `null` if the task failed before its execution:
+    var initTime = task?.initTime;
+    var endTime = initTime != null ? (task!.endTime ?? DateTime.now()) : null;
+
     try {
-      replyPort.send(_IsolateReplyError(error, lines));
+      replyPort.send(_IsolateReplyError(error, lines, initTime, endTime));
     } on ArgumentError {
       var error2 = error is AsyncExecutorError
           ? error.copyWith(
@@ -1210,7 +1309,7 @@ class _Isolate {
             )
           : '$error';
 
-      replyPort.send(_IsolateReplyError(error2, lines));
+      replyPort.send(_IsolateReplyError(error2, lines, initTime, endTime));
     }
   }
 
@@ -1443,7 +1542,17 @@ final class _IsolateReplyError extends _IsolateReply {
   final Object error;
   final List<String>? stackTrace;
 
-  const _IsolateReplyError(this.error, this.stackTrace);
+  /// The task execution times: `null` if the task failed before its execution
+  /// (resolving its `SharedData` or instantiating it in the `Isolate`).
+  final DateTime? initTime;
+  final DateTime? endTime;
+
+  const _IsolateReplyError(
+    this.error,
+    this.stackTrace,
+    this.initTime,
+    this.endTime,
+  );
 }
 
 class _SharedDataSerial<S> {

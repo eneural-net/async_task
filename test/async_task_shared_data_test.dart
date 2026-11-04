@@ -196,10 +196,101 @@ void main() {
     });
 
     test('copyGeneric: MapEntry', () {
-      // The copied entry has dynamic types (generic copy).
       MapEntry e = SerializableData.copyGeneric<dynamic>(MapEntry('k', 10));
+      expect(e, isA<MapEntry<String, int>>());
       expect(e.key, equals('k'));
       expect(e.value, equals(10));
+
+      // Was failing the cast (copied as `MapEntry<dynamic, dynamic>`):
+      var typed = SerializableData.copyGeneric(MapEntry('k', 10));
+      expect(typed, isA<MapEntry<String, int>>());
+      expect(typed.key, equals('k'));
+      expect(typed.value, equals(10));
+
+      // A mutable key/value is deep copied:
+      var entry = MapEntry<String, Object>('k', <int>[1, 2]);
+      var entryCopy = SerializableData.copyGeneric(entry);
+      expect(entryCopy, isA<MapEntry<String, Object>>());
+      expect(identical(entryCopy.value, entry.value), isFalse);
+      expect(entryCopy.value, isA<List<int>>());
+      expect(entryCopy.value, equals([1, 2]));
+    });
+
+    test('copyGeneric: typed collections keep their types', () {
+      // Were failing the cast (copied with `dynamic` elements):
+      T check<T>(T o) {
+        var copy = SerializableData.copyGeneric<T>(o);
+        expect(copy, isA<T>());
+        expect(identical(copy, o), isFalse);
+        expect(copy, equals(o));
+        return copy;
+      }
+
+      check(<Object>[1, 'a']);
+      check(<String>['a', 'b']);
+      check(<int>[1, 2]);
+      check(<double>[1.5]);
+      check(<int?>[1, null]);
+      check(<Object?>[null, 1]);
+      check(<String>{'a', 'b'});
+      check(<int>{1, 2});
+      check(<String, Object>{'a': 1, 'b': 'x'});
+      check(<String, int>{'a': 1});
+      check(<String, String?>{'a': null});
+      check(<int, String>{1: 'a'});
+      check(<String, dynamic>{'a': 1});
+
+      Iterable<int> iter = [1, 2].map((e) => e * 10);
+      var iterCopy = SerializableData.copyGeneric(iter);
+      expect(iterCopy, isA<Iterable<int>>());
+      expect(iterCopy, equals([10, 20]));
+
+      // Nested typed collections:
+      var nestedSource = <List<int>>[
+        [1],
+        [2, 3],
+      ];
+      var nested = check(nestedSource);
+      expect(nested[0], isA<List<int>>());
+      expect(identical(nested[0], nestedSource[0]), isFalse);
+
+      var nestedMapSource = <String, Object>{
+        'a': ['x'],
+      };
+      var nestedMap = check(nestedMapSource);
+      expect(nestedMap['a'], isA<List<String>>());
+      expect(identical(nestedMap['a'], nestedMapSource['a']), isFalse);
+
+      var listOfMaps = check(<Map<String, int>>[
+        {'a': 1},
+      ]);
+      expect(listOfMaps.single, isA<Map<String, int>>());
+
+      // Not supported: a `Map` (or `MapEntry`) with a value type that is not
+      // a basic type. Dart can't create a `Map` with the type arguments of
+      // another `Map`: only the basic types are preserved.
+      expect(
+        () => SerializableData.copyGeneric(<String, List<int>>{
+          'a': [1],
+        }),
+        throwsStateError,
+      );
+      expect(
+        () => SerializableData.copyGeneric(MapEntry('a', [1])),
+        throwsStateError,
+      );
+      // ... unless the static type allows the preserved one:
+      Map<String, Object> m = SerializableData.copyGeneric<Map<String, Object>>(
+        <String, List<int>>{
+          'a': [1],
+        },
+      );
+      expect(m['a'], equals([1]));
+    });
+
+    test('copyGeneric: null', () {
+      expect(SerializableData.copyGeneric<int?>(null), isNull);
+      expect(SerializableData.copyGeneric(<int?>[null]), equals([null]));
     });
 
     test('copyGeneric: typed lists', () {

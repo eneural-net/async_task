@@ -11,7 +11,7 @@ class SharedPointerUInt8List extends SharedPointerBytes<int> {
   SharedPointerUInt8List(int length) : super(length, 1, true);
 
   SharedPointerUInt8List.fromAddress(SharedPointerAddress address)
-      : super.fromAddress(address.parameters![0], 1, true, address);
+    : super.fromAddress(address.parameters![0], 1, true, address);
 
   @override
   SharedPointerUInt8List copy() {
@@ -52,7 +52,7 @@ class SharedPointerUInt32List extends SharedPointerBytes<int> {
   SharedPointerUInt32List(int length) : super(length * 4, 4, true);
 
   SharedPointerUInt32List.fromAddress(SharedPointerAddress address)
-      : super.fromAddress(address.parameters![0], 4, true, address);
+    : super.fromAddress(address.parameters![0], 4, true, address);
 
   @override
   SharedPointerUInt32List copy() {
@@ -95,7 +95,7 @@ class SharedPointerUInt64List extends SharedPointerBytes<int> {
   SharedPointerUInt64List(int length) : super(length * 8, 8, true);
 
   SharedPointerUInt64List.fromAddress(SharedPointerAddress address)
-      : super.fromAddress(address.parameters![0], 8, true, address);
+    : super.fromAddress(address.parameters![0], 8, true, address);
 
   @override
   SharedPointerUInt64List copy() {
@@ -141,7 +141,7 @@ class SharedPointerUint32 extends SharedPointerBytes<int> {
   SharedPointerUint32() : super(4, 4, true);
 
   SharedPointerUint32.fromAddress(SharedPointerAddress address)
-      : super.fromAddress(4, 4, true, address);
+    : super.fromAddress(4, 4, true, address);
 
   @override
   SharedPointerUint32 copy() {
@@ -177,7 +177,7 @@ class SharedPointerUint64 extends SharedPointerBytes<int> {
   SharedPointerUint64() : super(8, 8, true);
 
   SharedPointerUint64.fromAddress(SharedPointerAddress address)
-      : super.fromAddress(8, 8, true, address);
+    : super.fromAddress(8, 8, true, address);
 
   @override
   SharedPointerUint64 copy() {
@@ -209,7 +209,10 @@ class SharedPointerUint64 extends SharedPointerBytes<int> {
 }
 
 typedef SharedPointerMapWriter<T> = void Function(
-    ByteData byteData, int offset, T value);
+  ByteData byteData,
+  int offset,
+  T value,
+);
 typedef SharedPointerMapReader<T> = T? Function(ByteData byteData, int offset);
 
 /// A [SharedPointerBytes] mapped to generic [reader]/[writer] functions.
@@ -221,17 +224,29 @@ class SharedPointerMapped<T> extends SharedPointerBytes<T> {
   final SharedPointerMapReader<T> reader;
 
   SharedPointerMapped(
-      int allocatedBytesLength, int bytesPerValue, this.writer, this.reader)
-      : super(allocatedBytesLength, bytesPerValue, true);
+    int allocatedBytesLength,
+    int bytesPerValue,
+    this.writer,
+    this.reader,
+  ) : super(allocatedBytesLength, bytesPerValue, true);
 
-  SharedPointerMapped.fromAddress(int allocatedBytesLength, int bytesPerValue,
-      this.writer, this.reader, SharedPointerAddress address)
-      : super.fromAddress(allocatedBytesLength, bytesPerValue, true, address);
+  SharedPointerMapped.fromAddress(
+    int allocatedBytesLength,
+    int bytesPerValue,
+    this.writer,
+    this.reader,
+    SharedPointerAddress address,
+  ) : super.fromAddress(allocatedBytesLength, bytesPerValue, true, address);
 
   @override
   SharedPointerMapped<T> copy() {
     return SharedPointerMapped.fromAddress(
-        allocatedBytesLength, bytesPerValue, writer, reader, address);
+      allocatedBytesLength,
+      bytesPerValue,
+      writer,
+      reader,
+      address,
+    );
   }
 
   @override
@@ -282,13 +297,18 @@ abstract class SharedPointerBytes<T> extends SharedPointer<T> {
   late final ByteData _byteData;
 
   SharedPointerBytes(
-      this.allocatedBytesLength, this.bytesPerValue, this.initializeZeroed)
-      : length = allocatedBytesLength ~/ bytesPerValue;
+    this.allocatedBytesLength,
+    this.bytesPerValue,
+    this.initializeZeroed,
+  ) : length = allocatedBytesLength ~/ bytesPerValue;
 
-  SharedPointerBytes.fromAddress(this.allocatedBytesLength, this.bytesPerValue,
-      this.initializeZeroed, SharedPointerAddress address)
-      : length = allocatedBytesLength ~/ bytesPerValue,
-        super.fromAddress(address);
+  SharedPointerBytes.fromAddress(
+    this.allocatedBytesLength,
+    this.bytesPerValue,
+    this.initializeZeroed,
+    SharedPointerAddress address,
+  ) : length = allocatedBytesLength ~/ bytesPerValue,
+      super.fromAddress(address);
 
   /// Returns `true` if this instance is of [length] `0`.
   bool get isEmpty => length == 0;
@@ -319,8 +339,10 @@ abstract class SharedPointerBytes<T> extends SharedPointer<T> {
 
   SharedPointerAddress _initializeFromPointer() {
     _data = _pointer.asTypedList(allocatedBytesLength);
-    _byteData =
-        _data.buffer.asByteData(_data.offsetInBytes, _data.lengthInBytes);
+    _byteData = _data.buffer.asByteData(
+      _data.offsetInBytes,
+      _data.lengthInBytes,
+    );
 
     if (initializeZeroed && _initializer) {
       for (var i = 0; i < allocatedBytesLength; ++i) {
@@ -328,8 +350,10 @@ abstract class SharedPointerBytes<T> extends SharedPointer<T> {
       }
     }
 
-    return SharedPointerAddress(
-        _pointer.address, runtimeType, [allocatedBytesLength, bytesPerValue]);
+    return SharedPointerAddress(_pointer.address, runtimeType, [
+      allocatedBytesLength,
+      bytesPerValue,
+    ]);
   }
 
   /// The [Uint8List] bytes viewer of this [Pointer] memory.
@@ -390,7 +414,7 @@ abstract class SharedPointerBytes<T> extends SharedPointer<T> {
 /// Then in the other [Isolate] side just call [SharedPointerAddress.getPointer],
 /// to have the working [SharedPointer] instance.
 ///
-/// Note that a [ffi.Pointer] originally can't shared between [Isolate]s, but
+/// Note that a `dart:ffi` [Pointer] originally can't shared between [Isolate]s, but
 /// sharing the pointer address allows the same memory are to be acessed
 /// simultaneously by different `Isolate`. For now there's no `mutex` implementation
 /// to allow control of the owner `thread` of the [SharedPointer].
@@ -406,7 +430,8 @@ abstract class SharedPointer<T>
     var initAddress = _initializeFromAddress(address);
     if (initAddress != address) {
       throw StateError(
-          "Initialization returned a different address: $initAddress != $address");
+        "Initialization returned a different address: $initAddress != $address",
+      );
     }
   }
 
@@ -435,11 +460,12 @@ abstract class SharedPointer<T>
   /// Reads a new [value], different from [lastValue], performing a pooling with
   /// [interval] (default: 10ms) and a [timeout] (default: 10s) that checks
   /// for a new value if needed.
-  FutureOr<T?> readNewValue(
-      {T? lastValue,
-      Duration? interval,
-      Duration? timeout,
-      bool acceptsNullValue = true}) {
+  FutureOr<T?> readNewValue({
+    T? lastValue,
+    Duration? interval,
+    Duration? timeout,
+    bool acceptsNullValue = true,
+  }) {
     var value = read();
 
     if (acceptsNullValue || value != null) {
@@ -453,8 +479,12 @@ abstract class SharedPointer<T>
     return _readNewValueImpl(lastValue, interval, timeout, acceptsNullValue);
   }
 
-  Future<T?> _readNewValueImpl(T? lastValue, Duration interval,
-      Duration timeout, bool acceptsNullValue) async {
+  Future<T?> _readNewValueImpl(
+    T? lastValue,
+    Duration interval,
+    Duration timeout,
+    bool acceptsNullValue,
+  ) async {
     var init = DateTime.now();
     while (true) {
       await Future.delayed(interval);
@@ -583,7 +613,8 @@ class SharedPointerAddress
 
   @override
   SerializableData<SharedPointerAddress, List> instantiate(
-      SharedPointerAddress data) {
+    SharedPointerAddress data,
+  ) {
     return data;
   }
 

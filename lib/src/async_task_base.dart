@@ -8,18 +8,10 @@ import 'async_task_shared_data.dart';
 import 'async_task_extension.dart';
 
 /// Status of an [AsyncTask].
-enum AsyncTaskStatus {
-  idle,
-  executing,
-  successful,
-  error,
-}
+enum AsyncTaskStatus { idle, executing, successful, error }
 
 /// [AsyncTask] Platform type.
-enum AsyncTaskPlatformType {
-  generic,
-  isolate,
-}
+enum AsyncTaskPlatformType { generic, isolate }
 
 /// [AsyncTask] Platform information.
 class AsyncTaskPlatform {
@@ -43,7 +35,11 @@ class AsyncTaskPlatform {
 }
 
 typedef OnFinishAsyncTask = void Function(
-    AsyncTask asyncTask, Object? result, Object? error, StackTrace? stackTrace);
+  AsyncTask asyncTask,
+  Object? result,
+  Object? error,
+  StackTrace? stackTrace,
+);
 
 /// Base class for tasks implementation.
 ///
@@ -120,14 +116,17 @@ abstract class AsyncTask<P, R> {
       if (ret is Future<R>) {
         Future<T>? ret2;
 
-        return ret2 = ret.then((result) {
-          _finish(result, endTime: DateTime.now());
-          return result as T;
-        }, onError: (e, s) {
-          ret2?.suppressUnhandledError();
-          _finishError(e, s, endTime: DateTime.now());
-          throw e;
-        });
+        return ret2 = ret.then(
+          (result) {
+            _finish(result, endTime: DateTime.now());
+            return result as T;
+          },
+          onError: (e, s) {
+            ret2?.suppressUnhandledError();
+            _finishError(e, s, endTime: DateTime.now());
+            throw e;
+          },
+        );
       } else {
         _finish(ret, endTime: DateTime.now());
         return ret as T;
@@ -157,7 +156,10 @@ abstract class AsyncTask<P, R> {
   }
 
   void _callOnFinishAsyncTask(
-      Object? result, Object? error, StackTrace? stackTrace) {
+    Object? result,
+    Object? error,
+    StackTrace? stackTrace,
+  ) {
     final triggers = _onFinishAsyncTaskTriggers;
 
     if (triggers != null) {
@@ -186,8 +188,12 @@ abstract class AsyncTask<P, R> {
     _finishChannel();
   }
 
-  void _finishError(Object error, StackTrace? stackTrace,
-      {DateTime? initTime, DateTime? endTime}) {
+  void _finishError(
+    Object error,
+    StackTrace? stackTrace, {
+    DateTime? initTime,
+    DateTime? endTime,
+  }) {
     _setExecutionTime(initTime, endTime);
 
     var error2 = error is AsyncExecutorError
@@ -243,8 +249,10 @@ abstract class AsyncTask<P, R> {
 
   Duration? get executionTime => _initTime != null && _endTime != null
       ? Duration(
-          milliseconds: _endTime!.millisecondsSinceEpoch -
-              _initTime!.millisecondsSinceEpoch)
+          milliseconds:
+              _endTime!.millisecondsSinceEpoch -
+              _initTime!.millisecondsSinceEpoch,
+        )
       : null;
 
   /// The current status.
@@ -274,8 +282,10 @@ abstract class AsyncTask<P, R> {
   P parameters();
 
   /// Creates an instance of this task type with [parameters] and optional [sharedData].
-  AsyncTask<P, R> instantiate(P parameters,
-      [Map<String, SharedData>? sharedData]);
+  AsyncTask<P, R> instantiate(
+    P parameters, [
+    Map<String, SharedData>? sharedData,
+  ]);
 
   /// Creates a copy of this task in its initial state (before execution state).
   AsyncTask<P, R> copy() => instantiate(parameters(), sharedData());
@@ -317,7 +327,8 @@ abstract class AsyncTask<P, R> {
 
   /// Resolves the channel instance. Called by [AsyncExecutor] when executing this task.
   AsyncTaskChannel? resolveChannel(
-      void Function(AsyncTask task, AsyncTaskChannel channel) initializer) {
+    void Function(AsyncTask task, AsyncTaskChannel channel) initializer,
+  ) {
     if (_channelResolved) return _channelInstance;
     var channel = _channelInstance = channelInstantiator();
 
@@ -378,23 +389,40 @@ abstract class AsyncTask<P, R> {
   }
 }
 
-AsyncExecutorThread createAsyncExecutorThread(String executorName,
-    AsyncTaskLoggerCaller logger, bool sequential, int parallelism,
-    [AsyncTaskRegister? taskRegister]) {
+AsyncExecutorThread createAsyncExecutorThread(
+  String executorName,
+  AsyncTaskLoggerCaller logger,
+  bool sequential,
+  int parallelism, [
+  AsyncTaskRegister? taskRegister,
+]) {
   if (parallelism >= 1) {
     return (createMultiThreadAsyncExecutorThread(
-            executorName, logger, sequential, parallelism, taskRegister) ??
+          executorName,
+          logger,
+          sequential,
+          parallelism,
+          taskRegister,
+        ) ??
         _AsyncExecutorSingleThread(executorName, logger, sequential));
   } else {
     return _AsyncExecutorSingleThread(executorName, logger, sequential);
   }
 }
 
-typedef AsyncTaskLogger = void Function(String type, dynamic message,
-    [dynamic error, dynamic stackTrace]);
+typedef AsyncTaskLogger = void Function(
+  String type,
+  dynamic message, [
+  dynamic error,
+  dynamic stackTrace,
+]);
 
-void defaultAsyncTaskLogger(String type, dynamic message,
-    [dynamic error, dynamic stackTrace]) {
+void defaultAsyncTaskLogger(
+  String type,
+  dynamic message, [
+  dynamic error,
+  dynamic stackTrace,
+]) {
   if (error != null) {
     if (message != null) {
       print('[$type] $message');
@@ -422,10 +450,14 @@ class AsyncTaskLoggerCaller {
   final AsyncTaskLogger _logger;
 
   AsyncTaskLoggerCaller(AsyncTaskLogger? logger)
-      : _logger = logger ?? defaultAsyncTaskLogger;
+    : _logger = logger ?? defaultAsyncTaskLogger;
 
-  static void _dummyLogger(String type, dynamic message,
-      [dynamic error, dynamic stackTrace]) {}
+  static void _dummyLogger(
+    String type,
+    dynamic message, [
+    dynamic error,
+    dynamic stackTrace,
+  ]) {}
 
   AsyncTaskLogger _actualLogger = _dummyLogger;
 
@@ -491,13 +523,7 @@ class AsyncTaskLoggerCaller {
 
 typedef AsyncTaskRegister = FutureOr<List<AsyncTask>> Function();
 
-enum AsyncExecutorStatus {
-  idle,
-  started,
-  ready,
-  closing,
-  closed,
-}
+enum AsyncExecutorStatus { idle, started, ready, closing, closed }
 
 /// Asynchronous Executor of [AsyncTask].
 class AsyncExecutor {
@@ -538,22 +564,27 @@ class AsyncExecutor {
 
   late final AsyncTaskLoggerCaller _logger;
 
-  AsyncExecutor(
-      {this.name = '',
-      this.sequential = false,
-      int? parallelism,
-      double? parallelismPercentage,
-      this.taskTypeRegister,
-      AsyncTaskLogger? logger})
-      : parallelism = parameterParallelism(
-            value: parallelism, byPercentage: parallelismPercentage),
-        _executorThread = createAsyncExecutorThread(
-            name,
-            AsyncTaskLoggerCaller(logger),
-            sequential,
-            parameterParallelism(
-                value: parallelism, byPercentage: parallelismPercentage),
-            taskTypeRegister) {
+  AsyncExecutor({
+    this.name = '',
+    this.sequential = false,
+    int? parallelism,
+    double? parallelismPercentage,
+    this.taskTypeRegister,
+    AsyncTaskLogger? logger,
+  }) : parallelism = parameterParallelism(
+         value: parallelism,
+         byPercentage: parallelismPercentage,
+       ),
+       _executorThread = createAsyncExecutorThread(
+         name,
+         AsyncTaskLoggerCaller(logger),
+         sequential,
+         parameterParallelism(
+           value: parallelism,
+           byPercentage: parallelismPercentage,
+         ),
+         taskTypeRegister,
+       ) {
     _logger = _executorThread.logger;
   }
 
@@ -597,8 +628,10 @@ class AsyncExecutor {
   /// Execute [task] using this executor.
   ///
   /// If task was already submitted the execution will be skipped.
-  Future<R> execute<P, R>(AsyncTask<P, R> task,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+  Future<R> execute<P, R>(
+    AsyncTask<P, R> task, {
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  }) {
     if (task.wasSubmitted) {
       return task.waitResult();
     }
@@ -619,7 +652,9 @@ class AsyncExecutor {
   List<_TaskToExecute>? _tasksToExecuteQueue;
 
   Future<R> _executeNotStarted<P, R>(
-      AsyncTask<P, R> task, AsyncExecutorSharedDataInfo? sharedDataInfo) {
+    AsyncTask<P, R> task,
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  ) {
     var tasksToExecuteQueue = _tasksToExecuteQueue ??= <_TaskToExecute>[];
     var taskToExecute = _TaskToExecute<P, R>(task, sharedDataInfo);
     tasksToExecuteQueue.add(taskToExecute);
@@ -640,7 +675,9 @@ class AsyncExecutor {
   }
 
   Future<R> _executeAlreadyStarted<P, R>(
-      AsyncTask<P, R> task, AsyncExecutorSharedDataInfo? sharedDataInfo) {
+    AsyncTask<P, R> task,
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  ) {
     if (_tasksToExecuteQueue != null) {
       _flushTasksToExecute();
     }
@@ -651,26 +688,31 @@ class AsyncExecutor {
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
-  FutureOr<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
-          {bool async = false}) =>
-      _executorThread.disposeSharedData(sharedDataSignatures, async: async);
+  FutureOr<bool> disposeSharedData<P, R>(
+    Set<String> sharedDataSignatures, {
+    bool async = false,
+  }) => _executorThread.disposeSharedData(sharedDataSignatures, async: async);
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
-  ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
+  ///   Note that [AsyncExecutorSharedDataInfo.disposedSharedDataSignatures] will be populated.
   FutureOr<bool> disposeSharedDataInfo<P, R>(
-          AsyncExecutorSharedDataInfo sharedDataInfo,
-          {bool async = false}) =>
-      _executorThread.disposeSharedDataInfo(sharedDataInfo, async: async);
+    AsyncExecutorSharedDataInfo sharedDataInfo, {
+    bool async = false,
+  }) => _executorThread.disposeSharedDataInfo(sharedDataInfo, async: async);
 
   /// Executes all the [tasks] using this executor. Calling [execute]
   /// for each task.
-  List<Future<R>> executeAll<P, R>(Iterable<AsyncTask<P, R>> tasks,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+  List<Future<R>> executeAll<P, R>(
+    Iterable<AsyncTask<P, R>> tasks, {
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  }) {
     if (tasks is List<AsyncTask<P, R>>) {
-      return List.generate(tasks.length,
-          (i) => execute(tasks[i], sharedDataInfo: sharedDataInfo));
+      return List.generate(
+        tasks.length,
+        (i) => execute(tasks[i], sharedDataInfo: sharedDataInfo),
+      );
     } else {
       return tasks
           .toList()
@@ -681,9 +723,10 @@ class AsyncExecutor {
 
   /// Executes all the [tasks] using this executor and waits for the results.
   Future<List<R>> executeAllAndWaitResults<P, R>(
-      Iterable<AsyncTask<P, R>> tasks,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo,
-      bool disposeSentSharedData = false}) async {
+    Iterable<AsyncTask<P, R>> tasks, {
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+    bool disposeSentSharedData = false,
+  }) async {
     if (disposeSentSharedData) {
       sharedDataInfo ??= AsyncExecutorSharedDataInfo();
 
@@ -692,8 +735,9 @@ class AsyncExecutor {
 
       if (sharedDataInfo.sentSharedDataSignatures.isNotEmpty) {
         await disposeSharedData(sharedDataInfo.sentSharedDataSignatures);
-        sharedDataInfo.disposedSharedDataSignatures
-            .addAll(sharedDataInfo.sentSharedDataSignatures);
+        sharedDataInfo.disposedSharedDataSignatures.addAll(
+          sharedDataInfo.sentSharedDataSignatures,
+        );
       }
 
       return results;
@@ -792,7 +836,11 @@ class AsyncExecutorThreadInfo {
   final bool parallel;
 
   AsyncExecutorThreadInfo(
-      this.sequential, this.maximumWorkers, this.threads, this.parallel);
+    this.sequential,
+    this.maximumWorkers,
+    this.threads,
+    this.parallel,
+  );
 
   /// Total number of threads/workers.
   int get workers => threads.length;
@@ -850,31 +898,45 @@ abstract class AsyncExecutorThread {
   bool isInExecutionContext(AsyncTask task);
 
   /// Executes [task] in this thread.
-  Future<R> execute<P, R>(AsyncTask<P, R> task,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo});
+  Future<R> execute<P, R>(
+    AsyncTask<P, R> task, {
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  });
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataSignatures] the signatures of [SharedData] to dispose.
-  FutureOr<bool> disposeSharedData<P, R>(Set<String> sharedDataSignatures,
-      {bool async = false});
+  FutureOr<bool> disposeSharedData<P, R>(
+    Set<String> sharedDataSignatures, {
+    bool async = false,
+  });
 
   /// Disposes [SharedData] sent to other `threads/isolates`.
   ///
   /// - [sharedDataInfo] the [AsyncExecutorSharedDataInfo] with sent [SharedData] signatures.
-  ///   Note that [AsyncExecutorSharedDataInfo.disposeSharedDataInfo] will be populated.
+  ///   Note that [AsyncExecutorSharedDataInfo.disposedSharedDataSignatures] will be populated.
   FutureOr<bool> disposeSharedDataInfo<P, R>(
-      AsyncExecutorSharedDataInfo sharedDataInfo,
-      {bool async = false});
+    AsyncExecutorSharedDataInfo sharedDataInfo, {
+    bool async = false,
+  });
 
   /// Perform a task finish operation.
   void finishTask<P, R>(
-      AsyncTask<P, R> task, DateTime? initTime, DateTime? endTime, R result,
-      [Object? error, StackTrace? stackTrace]) {
+    AsyncTask<P, R> task,
+    DateTime? initTime,
+    DateTime? endTime,
+    R result, [
+    Object? error,
+    StackTrace? stackTrace,
+  ]) {
     if (!task.isFinished) {
       if (error != null) {
-        task._finishError(error, stackTrace,
-            initTime: initTime, endTime: endTime);
+        task._finishError(
+          error,
+          stackTrace,
+          initTime: initTime,
+          endTime: endTime,
+        );
       } else {
         task._finish(result, initTime: initTime, endTime: endTime);
       }
@@ -889,10 +951,15 @@ abstract class AsyncExecutorThread {
 
 class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   _AsyncExecutorSingleThread(
-      super.executorName, super.logger, super.sequential);
+    super.executorName,
+    super.logger,
+    super.sequential,
+  );
 
-  final AsyncTaskPlatform _platform =
-      AsyncTaskPlatform(AsyncTaskPlatformType.generic, 1);
+  final AsyncTaskPlatform _platform = AsyncTaskPlatform(
+    AsyncTaskPlatformType.generic,
+    1,
+  );
 
   @override
   AsyncTaskPlatform get platform => _platform;
@@ -902,10 +969,11 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
 
   @override
   AsyncExecutorThreadInfo get info => AsyncExecutorThreadInfo(
-      sequential,
-      maximumWorkers,
-      [AsyncThreadInfo(0, _dispatchedTasksCount, _executedTasksCount)],
-      false);
+    sequential,
+    maximumWorkers,
+    [AsyncThreadInfo(0, _dispatchedTasksCount, _executedTasksCount)],
+    false,
+  );
 
   Zone? _zone;
 
@@ -942,12 +1010,15 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   AsyncTask? _executing;
 
   @override
-  Future<R> execute<P, R>(AsyncTask<P, R> task,
-      {AsyncExecutorSharedDataInfo? sharedDataInfo}) {
+  Future<R> execute<P, R>(
+    AsyncTask<P, R> task, {
+    AsyncExecutorSharedDataInfo? sharedDataInfo,
+  }) {
     bindTask(task);
 
     task.resolveChannel(
-        (t, c) => c.initialize(t, _AsyncTaskChannelPortLocal(c)));
+      (t, c) => c.initialize(t, _AsyncTaskChannelPortLocal(c)),
+    );
 
     if (sequential) {
       if (_executing == null) {
@@ -976,7 +1047,8 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
         ++_dispatchedTasksCount;
 
         task.addOnFinishAsyncTask(
-            (asyncTask, result, error, stackTrace) => ++_executedTasksCount);
+          (asyncTask, result, error, stackTrace) => ++_executedTasksCount,
+        );
 
         _taskExecuteSafe(task);
       });
@@ -1014,14 +1086,16 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
   }
 
   @override
-  bool disposeSharedData<P, R>(Set<String> sharedDataSignatures,
-          {bool async = false}) =>
-      true;
+  bool disposeSharedData<P, R>(
+    Set<String> sharedDataSignatures, {
+    bool async = false,
+  }) => true;
 
   @override
-  bool disposeSharedDataInfo<P, R>(AsyncExecutorSharedDataInfo sharedDataInfo,
-          {bool async = false}) =>
-      true;
+  bool disposeSharedDataInfo<P, R>(
+    AsyncExecutorSharedDataInfo sharedDataInfo, {
+    bool async = false,
+  }) => true;
 
   @override
   String toString() {
@@ -1054,10 +1128,15 @@ class AsyncExecutorError {
 
   AsyncExecutorError(this.message, [this.cause, this._stackTrace]);
 
-  AsyncExecutorError copyWith(
-          {String? message, Object? cause, Object? stackTrace}) =>
-      AsyncExecutorError(message ?? this.message, cause ?? this.cause,
-          stackTrace ?? _stackTrace);
+  AsyncExecutorError copyWith({
+    String? message,
+    Object? cause,
+    Object? stackTrace,
+  }) => AsyncExecutorError(
+    message ?? this.message,
+    cause ?? this.cause,
+    stackTrace ?? _stackTrace,
+  );
 
   dynamic get stackTrace {
     var s = _stackTrace;

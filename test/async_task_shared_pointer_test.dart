@@ -1,4 +1,6 @@
 @TestOn('vm')
+library;
+
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -25,19 +27,21 @@ void main() {
         expect(sp.read(), equals(1234));
 
         expect(
-            sp.bytes,
-            equals(Endian.host == Endian.big
-                ? [0, 0, 0x04, 0xD2]
-                : [0xD2, 0x04, 0, 0]));
+          sp.bytes,
+          equals(
+            Endian.host == Endian.big ? [0, 0, 0x04, 0xD2] : [0xD2, 0x04, 0, 0],
+          ),
+        );
 
         sp.byteData.setUint8(1, 0x05);
         expect(sp.read(), equals(1490));
 
         expect(
-            sp.bytes,
-            equals(Endian.host == Endian.big
-                ? [0, 0, 0x05, 0xD2]
-                : [0xD2, 0x05, 0, 0]));
+          sp.bytes,
+          equals(
+            Endian.host == Endian.big ? [0, 0, 0x05, 0xD2] : [0xD2, 0x05, 0, 0],
+          ),
+        );
       }
 
       {
@@ -163,8 +167,10 @@ void main() {
         var deserialize = sp.deserialize(serial);
         expect(deserialize, isA<SharedPointerUInt8List>());
 
-        expect(deserialize.view(),
-            equals([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]));
+        expect(
+          deserialize.view(),
+          equals([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]),
+        );
       }
 
       var sp2 = sp.address.getPointer() as SharedPointerUInt8List;
@@ -207,7 +213,48 @@ void main() {
       }
 
       expect(
-          sp.view(),
+        sp.view(),
+        equals([
+          100000,
+          100001,
+          100002,
+          100003,
+          100004,
+          100005,
+          100006,
+          100007,
+          100008,
+          100009,
+          100010,
+          100011,
+        ]),
+      );
+
+      expect(
+        sp.sublist(2, 10),
+        equals([
+          100002,
+          100003,
+          100004,
+          100005,
+          100006,
+          100007,
+          100008,
+          100009,
+        ]),
+      );
+
+      {
+        var serial = sp.serialize();
+        expect(serial, isA<SharedPointerAddress>());
+
+        expect(serial.copy(), equals(serial));
+
+        var deserialize = sp.deserialize(serial);
+        expect(deserialize, isA<SharedPointerUInt32List>());
+
+        expect(
+          deserialize.view(),
           equals([
             100000,
             100001,
@@ -220,47 +267,9 @@ void main() {
             100008,
             100009,
             100010,
-            100011
-          ]));
-
-      expect(
-          sp.sublist(2, 10),
-          equals([
-            100002,
-            100003,
-            100004,
-            100005,
-            100006,
-            100007,
-            100008,
-            100009
-          ]));
-
-      {
-        var serial = sp.serialize();
-        expect(serial, isA<SharedPointerAddress>());
-
-        expect(serial.copy(), equals(serial));
-
-        var deserialize = sp.deserialize(serial);
-        expect(deserialize, isA<SharedPointerUInt32List>());
-
-        expect(
-            deserialize.view(),
-            equals([
-              100000,
-              100001,
-              100002,
-              100003,
-              100004,
-              100005,
-              100006,
-              100007,
-              100008,
-              100009,
-              100010,
-              100011
-            ]));
+            100011,
+          ]),
+        );
       }
 
       var sp2 = sp.address.getPointer() as SharedPointerUInt32List;
@@ -304,7 +313,48 @@ void main() {
       }
 
       expect(
-          sp.view(),
+        sp.view(),
+        equals([
+          100000,
+          100001,
+          100002,
+          100003,
+          100004,
+          100005,
+          100006,
+          100007,
+          100008,
+          100009,
+          100010,
+          100011,
+        ]),
+      );
+
+      expect(
+        sp.sublist(2, 10),
+        equals([
+          100002,
+          100003,
+          100004,
+          100005,
+          100006,
+          100007,
+          100008,
+          100009,
+        ]),
+      );
+
+      {
+        var serial = sp.serialize();
+        expect(serial, isA<SharedPointerAddress>());
+
+        expect(serial.copy(), equals(serial));
+
+        var deserialize = sp.deserialize(serial);
+        expect(deserialize, isA<SharedPointerUInt64List>());
+
+        expect(
+          deserialize.view(),
           equals([
             100000,
             100001,
@@ -317,47 +367,9 @@ void main() {
             100008,
             100009,
             100010,
-            100011
-          ]));
-
-      expect(
-          sp.sublist(2, 10),
-          equals([
-            100002,
-            100003,
-            100004,
-            100005,
-            100006,
-            100007,
-            100008,
-            100009
-          ]));
-
-      {
-        var serial = sp.serialize();
-        expect(serial, isA<SharedPointerAddress>());
-
-        expect(serial.copy(), equals(serial));
-
-        var deserialize = sp.deserialize(serial);
-        expect(deserialize, isA<SharedPointerUInt64List>());
-
-        expect(
-            deserialize.view(),
-            equals([
-              100000,
-              100001,
-              100002,
-              100003,
-              100004,
-              100005,
-              100006,
-              100007,
-              100008,
-              100009,
-              100010,
-              100011
-            ]));
+            100011,
+          ]),
+        );
       }
 
       var sp2 = sp.address.getPointer() as SharedPointerUInt64List;

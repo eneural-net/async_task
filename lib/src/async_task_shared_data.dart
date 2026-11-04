@@ -125,7 +125,8 @@ abstract class SerializableData<D, S> {
       return data.deepCopy() as D;
     } else {
       throw StateError(
-          "Can't perform a generic copy on type: ${data.runtimeType}");
+        "Can't perform a generic copy on type: ${data.runtimeType}",
+      );
     }
   }
 
@@ -186,7 +187,8 @@ abstract class SerializableData<D, S> {
       return data.serialize() as S;
     } else {
       throw StateError(
-          "Can't perform a generic serialization on type: ${data.runtimeType}");
+        "Can't perform a generic serialization on type: ${data.runtimeType}",
+      );
     }
   }
 
@@ -314,11 +316,13 @@ class SharedData<D, S> {
   /// copy will be performed.
   bool noSerializationOnDartNative;
 
-  SharedData(this.data,
-      {this.serializer,
-      this.deserializer,
-      this.signatureComputer,
-      this.noSerializationOnDartNative = false});
+  SharedData(
+    this.data, {
+    this.serializer,
+    this.deserializer,
+    this.signatureComputer,
+    this.noSerializationOnDartNative = false,
+  });
 
   /// Casts to [SharedData<X, Y>].
   SharedData<X, Y> cast<X, Y>() {
@@ -355,8 +359,10 @@ class SharedData<D, S> {
       } else {
         data = serial as D;
       }
-      return SharedData<D, S>(data,
-          noSerializationOnDartNative: noSerializationOnDartNative);
+      return SharedData<D, S>(
+        data,
+        noSerializationOnDartNative: noSerializationOnDartNative,
+      );
     } else if (deserializer != null) {
       return deserializer!(serial);
     } else {

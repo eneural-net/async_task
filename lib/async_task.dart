@@ -1,5 +1,5 @@
 /// Asynchronous tasks and parallel executors.
-library async_task;
+library;
 
 export 'src/async_task_base.dart';
 export 'src/async_task_channel.dart';

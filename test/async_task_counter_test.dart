@@ -1,4 +1,6 @@
 @Timeout(Duration(seconds: 450))
+library;
+
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
 import 'package:test/test.dart';
@@ -126,13 +128,18 @@ void main() {
     );
 
     test('error(no taskTypeRegister)', () async {
-      expect(() => AsyncExecutor(sequential: false, parallelism: 2),
-          throwsA(isStateError));
+      expect(
+        () => AsyncExecutor(sequential: false, parallelism: 2),
+        throwsA(isStateError),
+      );
     }, skip: AsyncExecutor.maximumParallelism <= 1);
 
     test('error(AsyncTask execution error)', () async {
       var executor = AsyncExecutor(
-          sequential: false, parallelism: 2, taskTypeRegister: _taskRegister);
+        sequential: false,
+        parallelism: 2,
+        taskTypeRegister: _taskRegister,
+      );
       print(executor);
 
       executor.logger.enabled = true;
@@ -143,26 +150,33 @@ void main() {
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
       expect(
-          () => executor.execute(task1),
-          throwsA(
-            isA<AsyncExecutorError>()
-                .having((e) => e.message, 'message',
-                    contains("AsyncTask execution error"))
-                .having(
-                  (e) => e.cause,
-                  'cause',
-                  isA<StateError>().having(
-                    (e) => e.message,
-                    'message',
-                    contains("Counter `start` should be `> 0`: -1000"),
-                  ),
+        () => executor.execute(task1),
+        throwsA(
+          isA<AsyncExecutorError>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains("AsyncTask execution error"),
+              )
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<StateError>().having(
+                  (e) => e.message,
+                  'message',
+                  contains("Counter `start` should be `> 0`: -1000"),
                 ),
-          ));
+              ),
+        ),
+      );
     });
 
     test('error(AsyncTask execution error + executor.close)', () async {
       var executor = AsyncExecutor(
-          sequential: false, parallelism: 2, taskTypeRegister: _taskRegister);
+        sequential: false,
+        parallelism: 2,
+        taskTypeRegister: _taskRegister,
+      );
       print(executor);
 
       executor.logger.enabled = true;
@@ -173,58 +187,77 @@ void main() {
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
       expect(
-          () => executor.execute(task1),
-          throwsA(
-            isA<AsyncExecutorError>()
-                .having((e) => e.message, 'message',
-                    contains("AsyncTask execution error"))
-                .having(
-                  (e) => e.cause,
-                  'cause',
-                  isA<StateError>().having(
-                    (e) => e.message,
-                    'message',
-                    contains("Counter `start` should be `> 0`: -1000"),
-                  ),
+        () => executor.execute(task1),
+        throwsA(
+          isA<AsyncExecutorError>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains("AsyncTask execution error"),
+              )
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<StateError>().having(
+                  (e) => e.message,
+                  'message',
+                  contains("Counter `start` should be `> 0`: -1000"),
                 ),
-          ));
+              ),
+        ),
+      );
 
       await executor.close();
     });
 
     test('error(AsyncTask execution error + parallelism: 0)', () async {
       var executor = AsyncExecutor(
-          sequential: false, parallelism: 0, taskTypeRegister: _taskRegister);
+        sequential: false,
+        parallelism: 0,
+        taskTypeRegister: _taskRegister,
+      );
       print(executor);
 
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
       expect(
-          () => executor.execute(task1),
-          throwsA(
-            isA<AsyncExecutorError>()
-                .having((e) => e.message, 'message',
-                    contains("AsyncTask execution error"))
-                .having(
-                  (e) => e.cause,
-                  'cause',
-                  isA<StateError>().having(
-                    (e) => e.message,
-                    'message',
-                    contains("Counter `start` should be `> 0`: -1000"),
-                  ),
+        () => executor.execute(task1),
+        throwsA(
+          isA<AsyncExecutorError>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains("AsyncTask execution error"),
+              )
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<StateError>().having(
+                  (e) => e.message,
+                  'message',
+                  contains("Counter `start` should be `> 0`: -1000"),
                 ),
-          ));
+              ),
+        ),
+      );
     });
   });
 }
 
-Future<void> _testParallelism(bool sequential, int parallelism,
-    bool withSharedData, bool withTaskChannel) async {
+Future<void> _testParallelism(
+  bool sequential,
+  int parallelism,
+  bool withSharedData,
+  bool withTaskChannel,
+) async {
   print('====================================================================');
   var initTime = DateTime.now();
   var executor = await _testParallelismImpl(
-      sequential, parallelism, withSharedData, withTaskChannel);
+    sequential,
+    parallelism,
+    withSharedData,
+    withTaskChannel,
+  );
   var endTime = DateTime.now();
   var elapsedTime =
       endTime.millisecondsSinceEpoch - initTime.millisecondsSinceEpoch;
@@ -234,28 +267,40 @@ Future<void> _testParallelism(bool sequential, int parallelism,
   print('>> Test Time: $elapsedTime');
 }
 
-Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
-    bool withSharedData, bool withTaskChannel) async {
+Future<AsyncExecutor> _testParallelismImpl(
+  bool sequential,
+  int parallelism,
+  bool withSharedData,
+  bool withTaskChannel,
+) async {
   var executor = AsyncExecutor(
-      sequential: sequential,
-      parallelism: parallelism,
-      taskTypeRegister: _taskRegister);
+    sequential: sequential,
+    parallelism: parallelism,
+    taskTypeRegister: _taskRegister,
+  );
   print(executor);
 
   executor.logger.enabled = true;
   executor.logger.enabledExecution = true;
 
   var counterStartData = withSharedData ? SharedData<int, int>(12000000) : null;
-  var counterStartMultiplierData =
-      withSharedData ? SharedData<int, int>(2) : null;
+  var counterStartMultiplierData = withSharedData
+      ? SharedData<int, int>(2)
+      : null;
 
   var counterStart = counterStartData?.data ?? 1;
   var counterStartMultiplier = counterStartMultiplierData?.data ?? 1;
 
   var counters = List<_Counter>.generate(
+    10,
+    (i) => _Counter(
       10,
-      (i) => _Counter(10, i + 1, counterStartData, counterStartMultiplierData,
-          withTaskChannel));
+      i + 1,
+      counterStartData,
+      counterStartMultiplierData,
+      withTaskChannel,
+    ),
+  );
 
   expect(counters.hasIdleTask, isTrue);
   expect(counters.hasTaskWithError, isFalse);
@@ -271,8 +316,10 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   expect(counters.errorTasks.length, equals(0));
 
   var sharedDataInfo = AsyncExecutorSharedDataInfo();
-  var executions =
-      executor.executeAll(counters, sharedDataInfo: sharedDataInfo);
+  var executions = executor.executeAll(
+    counters,
+    sharedDataInfo: sharedDataInfo,
+  );
 
   expect(executions.length, equals(counters.length));
 
@@ -312,14 +359,18 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   expect(counters.successfulTasks.length, equals(counters.length));
   expect(counters.errorTasks.length, equals(0));
 
-  expect(sharedDataInfo.sentSharedDataSignatures.length,
-      equals(withSharedData && executor.platform.isNative ? 2 : 0));
+  expect(
+    sharedDataInfo.sentSharedDataSignatures.length,
+    equals(withSharedData && executor.platform.isNative ? 2 : 0),
+  );
 
   await executor.disposeSharedDataInfo(sharedDataInfo);
   print(sharedDataInfo);
 
-  expect(sharedDataInfo.disposedSharedDataSignatures.length,
-      equals(sharedDataInfo.sentSharedDataSignatures.length));
+  expect(
+    sharedDataInfo.disposedSharedDataSignatures.length,
+    equals(sharedDataInfo.sentSharedDataSignatures.length),
+  );
 
   expect(results.length, equals(counters.length));
 
@@ -363,15 +414,22 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   var timeDiv = parallelism > 1 ? parallelism : 1;
 
   expect(totalTime > (!sequential ? 100 : (100 * 10 / timeDiv)), isTrue);
-  expect(totalTime < (!sequential ? 100 + 1000 : (100 * 100 / timeDiv) + 1000),
-      isTrue);
+  expect(
+    totalTime < (!sequential ? 100 + 1000 : (100 * 100 / timeDiv) + 1000),
+    isTrue,
+  );
 
   await executor.close();
 
   Object? error;
   try {
     var extraTask = _Counter(
-        10, 100, counterStartData, counterStartMultiplierData, withTaskChannel);
+      10,
+      100,
+      counterStartData,
+      counterStartMultiplierData,
+      withTaskChannel,
+    );
     await executor.execute(extraTask);
   } catch (e) {
     error = e;
@@ -382,8 +440,9 @@ Future<AsyncExecutor> _testParallelismImpl(bool sequential, int parallelism,
   return executor;
 }
 
-List<AsyncTask> _taskRegister() =>
-    [_Counter(0, 0, SharedData<int, int>(0), SharedData<int, int>(0), false)];
+List<AsyncTask> _taskRegister() => [
+  _Counter(0, 0, SharedData<int, int>(0), SharedData<int, int>(0), false),
+];
 
 class _Counter extends AsyncTask<List<int>, int> {
   final int total;
@@ -395,24 +454,31 @@ class _Counter extends AsyncTask<List<int>, int> {
 
   final bool withTaskChannel;
 
-  _Counter(this.total, this.stepValue, this.start, this.startMultiplier,
-      this.withTaskChannel);
+  _Counter(
+    this.total,
+    this.stepValue,
+    this.start,
+    this.startMultiplier,
+    this.withTaskChannel,
+  );
 
   @override
-  AsyncTask<List<int>, int> instantiate(List<int> parameters,
-          [Map<String, SharedData>? sharedData]) =>
-      _Counter(
-          parameters[0],
-          parameters[1],
-          sharedData?['start'] as SharedData<int, int>?,
-          sharedData?['startMultiplier'] as SharedData<int, int>?,
-          parameters[2] == 1);
+  AsyncTask<List<int>, int> instantiate(
+    List<int> parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _Counter(
+    parameters[0],
+    parameters[1],
+    sharedData?['start'] as SharedData<int, int>?,
+    sharedData?['startMultiplier'] as SharedData<int, int>?,
+    parameters[2] == 1,
+  );
 
   @override
   Map<String, SharedData>? sharedData() {
     var map = <String, SharedData>{
-      if (start != null) 'start': start!,
-      if (startMultiplier != null) 'startMultiplier': startMultiplier!
+      'start': ?start,
+      'startMultiplier': ?startMultiplier,
     };
     return map.isNotEmpty ? map : null;
   }

@@ -1,4 +1,6 @@
 @Timeout(Duration(seconds: 450))
+library;
+
 import 'package:async_task/async_task.dart';
 import 'package:async_task/async_task_extension.dart';
 import 'package:test/test.dart';
@@ -89,7 +91,10 @@ void main() {
 }
 
 Future<void> _testParallelism(
-    bool sequential, int parallelism, bool sync) async {
+  bool sequential,
+  int parallelism,
+  bool sync,
+) async {
   print('====================================================================');
   var initTime = DateTime.now();
   var executor = await _testParallelismImpl(sequential, parallelism, sync);
@@ -103,11 +108,15 @@ Future<void> _testParallelism(
 }
 
 Future<AsyncExecutor> _testParallelismImpl(
-    bool sequential, int parallelism, bool sync) async {
+  bool sequential,
+  int parallelism,
+  bool sync,
+) async {
   var executor = AsyncExecutor(
-      sequential: sequential,
-      parallelism: parallelism,
-      taskTypeRegister: _taskRegister);
+    sequential: sequential,
+    parallelism: parallelism,
+    taskTypeRegister: _taskRegister,
+  );
   print(executor);
 
   executor.logger.enabled = true;
@@ -128,12 +137,10 @@ Future<AsyncExecutor> _testParallelismImpl(
   expect(echoes.successfulTasks.length, equals(0));
   expect(echoes.errorTasks.length, equals(0));
 
-  var onFinishAsyncTask = <(
-    _Echo asyncTask,
-    Object? result,
-    Object? error,
-    StackTrace? stackTrace
-  )>[];
+  var onFinishAsyncTask =
+      <
+        (_Echo asyncTask, Object? result, Object? error, StackTrace? stackTrace)
+      >[];
 
   echoes.first.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
     onFinishAsyncTask.add((asyncTask as _Echo, result, error, stackTrace));
@@ -234,9 +241,10 @@ class _Echo extends AsyncTask<List<int>, List<int>> {
   _Echo(this.multiplier, this.sync);
 
   @override
-  AsyncTask<List<int>, List<int>> instantiate(List<int> parameters,
-          [Map<String, SharedData>? sharedData]) =>
-      _Echo(parameters[0], parameters[1] == 1);
+  AsyncTask<List<int>, List<int>> instantiate(
+    List<int> parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _Echo(parameters[0], parameters[1] == 1);
 
   @override
   List<int> parameters() => [multiplier, sync ? 1 : 0];

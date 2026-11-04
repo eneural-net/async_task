@@ -16,8 +16,7 @@ void main() async {
   var asyncExecutor = AsyncExecutor(
     sequential: false, // Non-sequential tasks.
     parallelism: 2, // Concurrency with 2 threads.
-    taskTypeRegister:
-        _taskTypeRegister, // The top-level function to register the tasks types.
+    taskTypeRegister: _taskTypeRegister, // The top-level function to register the tasks types.
   );
 
   // Enable logging output:
@@ -61,8 +60,10 @@ class PrimeChecker extends AsyncTask<int, bool> {
 
   // Instantiates a `PrimeChecker` task with `parameters`.
   @override
-  AsyncTask<int, bool> instantiate(int parameters,
-      [Map<String, SharedData>? sharedData]) {
+  AsyncTask<int, bool> instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) {
     return PrimeChecker(parameters);
   }
 

@@ -34,8 +34,7 @@ void main() async {
   var asyncExecutor = AsyncExecutor(
     sequential: false, // Non-sequential tasks.
     parallelism: 2, // Concurrency with 2 threads.
-    taskTypeRegister:
-        _taskTypeRegister, // The top-level function to register the tasks types.
+    taskTypeRegister: _taskTypeRegister, // The top-level function to register the tasks types.
   );
 
   // Enable logging output:
@@ -62,8 +61,9 @@ void main() async {
 // This top-level function returns the tasks types that will be registered
 // for execution. Task instances are returned, but won't be executed and
 // will be used only to identify the task type:
-List<AsyncTask> _taskTypeRegister() =>
-    [PrimeChecker(0, SharedData<List<int>, List<int>>([]))];
+List<AsyncTask> _taskTypeRegister() => [
+  PrimeChecker(0, SharedData<List<int>, List<int>>([])),
+];
 
 // A task that checks if a number is prime:
 class PrimeChecker extends AsyncTask<int, bool> {
@@ -77,8 +77,10 @@ class PrimeChecker extends AsyncTask<int, bool> {
 
   // Instantiates a `PrimeChecker` task with `parameters` and `sharedData`.
   @override
-  PrimeChecker instantiate(int parameters,
-      [Map<String, SharedData>? sharedData]) {
+  PrimeChecker instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) {
     return PrimeChecker(
       parameters,
       sharedData!['knownPrimes'] as SharedData<List<int>, List<int>>,

@@ -1,3 +1,7 @@
+## 1.1.5
+
+- async_extension: ^1.2.24
+
 ## 1.1.4
 
 - `lib/src/async_task_isolate.dart`:

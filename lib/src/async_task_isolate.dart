@@ -908,28 +908,36 @@ class _Isolate {
       var sentAllSharedData = message.sentAllSharedData!;
       var sharedDataMap = message.sharedDataMap!;
 
-      if (sentAllSharedData) {
-        _processTaskWithPreSentSharedData(
-          thID,
-          message.taskType,
-          message.submitTime,
-          taskChannelReceivePort,
-          taskChannelSendPort,
-          message.parameters,
-          sharedDataMap,
-          replyPort,
-        );
-      } else {
-        _processTaskWithSharedDataToResolve(
-          thID,
-          message.taskType,
-          message.submitTime,
-          taskChannelReceivePort,
-          taskChannelSendPort,
-          message.parameters,
-          sharedDataMap,
-          replyPort,
-        );
+      // Errors resolving the `SharedData` (not registered task type,
+      // `loadSharedData` throwing or returning `null`) must be replied as a
+      // task error: an exception thrown in this port handler would kill the
+      // `Isolate` and the task would never complete.
+      try {
+        if (sentAllSharedData) {
+          _processTaskWithPreSentSharedData(
+            thID,
+            message.taskType,
+            message.submitTime,
+            taskChannelReceivePort,
+            taskChannelSendPort,
+            message.parameters,
+            sharedDataMap,
+            replyPort,
+          );
+        } else {
+          _processTaskWithSharedDataToResolve(
+            thID,
+            message.taskType,
+            message.submitTime,
+            taskChannelReceivePort,
+            taskChannelSendPort,
+            message.parameters,
+            sharedDataMap,
+            replyPort,
+          );
+        }
+      } catch (e, s) {
+        _processTaskReplyError(null, e, s, replyPort);
       }
     } else {
       _processTaskExecute(
@@ -1076,12 +1084,18 @@ class _Isolate {
     Map<String, Object> sharedDataMap,
     SendPort replyPort,
   ) async {
-    var ret = await _resolveSharedDataMap(
-      thID,
-      taskType,
-      sharedDataMap,
-      replyPort,
-    );
+    MapEntry<Map<String, SharedData>, SendPort> ret;
+    try {
+      ret = await _resolveSharedDataMap(
+        thID,
+        taskType,
+        sharedDataMap,
+        replyPort,
+      );
+    } catch (e, s) {
+      _processTaskReplyError(null, e, s, replyPort);
+      return;
+    }
 
     var sharedDataMapResolved = ret.key;
     replyPort = ret.value;
@@ -1312,6 +1326,11 @@ class _Isolate {
 
       return MapEntry(resolvedSharedData, replyPort);
     } catch (e, s) {
+      // Allow a new request for this `SharedData` in a later task:
+      _requestingSharedDatas.remove(sharedDataSign);
+      // Concurrent waiters (if any) still receive the error, but without
+      // them it shouldn't be reported as unhandled (would kill the `Isolate`):
+      requesting.future.ignore();
       requesting.completeError(e, s);
       rethrow;
     }

@@ -149,7 +149,7 @@ void main() {
 
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
-      expect(
+      await expectLater(
         () => executor.execute(task1),
         throwsA(
           isA<AsyncExecutorError>()
@@ -169,6 +169,8 @@ void main() {
               ),
         ),
       );
+
+      await executor.close();
     });
 
     test('error(AsyncTask execution error + executor.close)', () async {
@@ -220,7 +222,7 @@ void main() {
 
       var task1 = _Counter(10, 1, SharedData<int, int>(-1000), null, false);
 
-      expect(
+      await expectLater(
         () => executor.execute(task1),
         throwsA(
           isA<AsyncExecutorError>()
@@ -240,6 +242,8 @@ void main() {
               ),
         ),
       );
+
+      await executor.close();
     });
   });
 }

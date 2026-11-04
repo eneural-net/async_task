@@ -111,7 +111,7 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
     await checkMemoryInstances(vmService, totalTasks, parallelism);
   }
 
-  asyncExecutor.close();
+  await asyncExecutor.close();
 }
 
 List<AsyncTask> _taskTypeRegister() => <AsyncTask>[

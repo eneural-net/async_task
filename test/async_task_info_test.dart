@@ -1,5 +1,7 @@
 @Timeout(Duration(seconds: 60))
 @TestOn('vm')
+library;
+
 import 'dart:developer';
 import 'dart:isolate';
 
@@ -17,7 +19,8 @@ void main() async {
 
   if (wsUri == null) {
     print(
-        '** Not running with VM Service! See option `--enable-vm-service`.\n');
+      '** Not running with VM Service! See option `--enable-vm-service`.\n',
+    );
   } else {
     vmService = await vmServiceConnectUri(wsUri.toString());
     print('** VM Service: $vmService > $wsUri\n');
@@ -52,16 +55,19 @@ void main() async {
 
 Future<void> _testInfo(bool sequential, int parallelism) async {
   var asyncExecutor = AsyncExecutor(
-      sequential: sequential,
-      parallelism: parallelism,
-      taskTypeRegister: _taskTypeRegister);
+    sequential: sequential,
+    parallelism: parallelism,
+    taskTypeRegister: _taskTypeRegister,
+  );
 
   print(asyncExecutor);
 
   var totalTasks = 100;
 
-  var tasks = List.generate(totalTasks,
-      (init) => _NsTask(_Ns(List.generate(10, (i) => (init * 10) + i))));
+  var tasks = List.generate(
+    totalTasks,
+    (init) => _NsTask(_Ns(List.generate(10, (i) => (init * 10) + i))),
+  );
 
   var executions = asyncExecutor.executeAll(tasks);
   var results = await Future.wait(executions);
@@ -105,12 +111,12 @@ Future<void> _testInfo(bool sequential, int parallelism) async {
     await checkMemoryInstances(vmService, totalTasks, parallelism);
   }
 
-  asyncExecutor.close();
+  await asyncExecutor.close();
 }
 
 List<AsyncTask> _taskTypeRegister() => <AsyncTask>[
-      _NsTask(_Ns([0]))
-    ];
+  _NsTask(_Ns([0])),
+];
 
 class _Ns {
   final List<int> ns;
@@ -131,8 +137,10 @@ class _NsTask extends AsyncTask<_Ns, _Ns> {
   _NsTask(this._ns);
 
   @override
-  AsyncTask<_Ns, _Ns> instantiate(_Ns parameters,
-      [Map<String, SharedData>? sharedData]) {
+  AsyncTask<_Ns, _Ns> instantiate(
+    _Ns parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) {
     return _NsTask(parameters);
   }
 
@@ -146,7 +154,10 @@ class _NsTask extends AsyncTask<_Ns, _Ns> {
 }
 
 Future<void> checkMemoryInstances(
-    vm_service.VmService? vmService, int totalTasks, int parallelism) async {
+  vm_service.VmService? vmService,
+  int totalTasks,
+  int parallelism,
+) async {
   if (vmService == null) return;
 
   print('-- Checking instances at $vmService');
@@ -170,9 +181,12 @@ Future<void> checkMemoryInstances(
       .toList();
   print('-- threadsIsolates: ${threadsIsolates.map((e) => e.name).toList()}');
 
-  expect(threadsIsolates.length, equals(parallelism),
-      reason:
-          "threadsIsolates:${threadsIsolates.length} != parallelism:$parallelism");
+  expect(
+    threadsIsolates.length,
+    equals(parallelism),
+    reason:
+        "threadsIsolates:${threadsIsolates.length} != parallelism:$parallelism",
+  );
 
   for (var i in threadsIsolates) {
     var isolateName = i.name;
@@ -180,8 +194,10 @@ Future<void> checkMemoryInstances(
 
     var isolateStr = '$isolateName{$isolateId}';
 
-    var allocationProfile =
-        await vmService.getAllocationProfile(isolateId, gc: true);
+    var allocationProfile = await vmService.getAllocationProfile(
+      isolateId,
+      gc: true,
+    );
     print('[$isolateStr] allocationProfile: ${allocationProfile.memoryUsage}');
 
     var members = allocationProfile.members ?? <vm_service.ClassHeapStats>[];
@@ -189,11 +205,15 @@ Future<void> checkMemoryInstances(
         .where((e) => e.classRef?.library?.uri?.contains('async_task') ?? false)
         .toList();
 
-    var memberNs =
-        membersAsyncTask.firstWhere((e) => e.classRef?.name == '_Ns');
+    var memberNs = membersAsyncTask.firstWhere(
+      (e) => e.classRef?.name == '_Ns',
+    );
 
-    var nsInstancesSet =
-        await vmService.getInstances(isolateId, memberNs.classRef!.id!, 1000);
+    var nsInstancesSet = await vmService.getInstances(
+      isolateId,
+      memberNs.classRef!.id!,
+      1000,
+    );
 
     expect(nsInstancesSet.totalCount, lessThan(10));
     expect(nsInstancesSet.totalCount, lessThan(totalTasks ~/ 2));
@@ -211,8 +231,13 @@ Future<void> checkMemoryInstances(
 }
 
 Future<void> _showInboundReferences(
-    vm_service.VmService vmService, String isolateId, vm_service.ObjRef obj,
-    {int level = 0, String ident = '', Set<String>? refsIds}) async {
+  vm_service.VmService vmService,
+  String isolateId,
+  vm_service.ObjRef obj, {
+  int level = 0,
+  String ident = '',
+  Set<String>? refsIds,
+}) async {
   if (level >= 10) {
     print('$ident ...');
     return;
@@ -235,19 +260,31 @@ Future<void> _showInboundReferences(
 
   for (var ref in refs.references ?? <vm_service.InboundReference>[]) {
     print(
-        '$ident  |-- ${ref.source?.json?['class']?['name']} ${ref.parentField ?? ''}@${ref.parentListIndex ?? ''}');
+      '$ident  |-- ${ref.source?.json?['class']?['name']} ${ref.parentField ?? ''}@${ref.parentListIndex ?? ''}',
+    );
     var source = ref.source!;
-    await _showInboundReferences(vmService, isolateId, source,
-        level: level + 1, ident: '  $ident', refsIds: refsIds);
+    await _showInboundReferences(
+      vmService,
+      isolateId,
+      source,
+      level: level + 1,
+      ident: '  $ident',
+      refsIds: refsIds,
+    );
   }
 }
 
 Future<vm_service.IsolateGroup> _resolveIsolateGroup(
-    vm_service.VM vm, vm_service.VmService vmService, String isolateID) async {
+  vm_service.VM vm,
+  vm_service.VmService vmService,
+  String isolateID,
+) async {
   var isolateGroupsIDs = vm.isolateGroups!.map((e) => e.id!);
   var isolateGroups = await Future.wait(
-      isolateGroupsIDs.map((gID) => vmService.getIsolateGroup(gID)));
+    isolateGroupsIDs.map((gID) => vmService.getIsolateGroup(gID)),
+  );
   var vmIsolateGroup = isolateGroups.firstWhere(
-      (g) => g.isolates?.where((i) => i.id == isolateID).isNotEmpty ?? false);
+    (g) => g.isolates?.where((i) => i.id == isolateID).isNotEmpty ?? false,
+  );
   return vmIsolateGroup;
 }

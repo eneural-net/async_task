@@ -124,8 +124,14 @@ extension MapExtension<K, V> on Map<K, V> {
 
   Map<K, V> copy() => Map.from(this);
 
-  Map<K, V> deepCopy() => Map.from(map((key, value) => MapEntry(
-      SerializableData.copyGeneric(key), SerializableData.copyGeneric(value))));
+  Map<K, V> deepCopy() => Map.from(
+    map(
+      (key, value) => MapEntry(
+        SerializableData.copyGeneric(key),
+        SerializableData.copyGeneric(value),
+      ),
+    ),
+  );
 
   bool deepEquals(Map<K, V> other) => _equality.equals(this, other);
 
@@ -144,8 +150,12 @@ extension MapExtension<K, V> on Map<K, V> {
       return this as S;
     }
 
-    return map((k, v) => MapEntry(SerializableData.serializeGeneric(k),
-        SerializableData.serializeGeneric(v))) as S;
+    return map(
+      (k, v) => MapEntry(
+        SerializableData.serializeGeneric(k),
+        SerializableData.serializeGeneric(v),
+      ),
+    ) as S;
   }
 
   void removeAllKeys(Iterable<Object?> keys) {
@@ -285,10 +295,10 @@ extension ListDoubleExtension on List<double> {
   Float64x2List toFloat64x2List() {
     var length = this.length;
     var size = length ~/ 2;
-    if (size * 4 < length) ++size;
+    if (size * 2 < length) ++size;
 
     var list = List.generate(size, (i) {
-      var j = i * 4;
+      var j = i * 2;
       var x = this[j];
       var y = this[++j];
       return Float64x2(x, y);

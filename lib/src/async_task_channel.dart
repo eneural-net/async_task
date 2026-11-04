@@ -10,7 +10,9 @@ import 'package:collection/collection.dart';
 ///   the executing context (from [AsyncTask.run]). If `false` indicates that
 ///   the message comes from outside the task.
 typedef AsyncTaskChannelMessageHandler = void Function(
-    dynamic message, bool fromExecutingContext);
+  dynamic message,
+  bool fromExecutingContext,
+);
 
 /// A message channel for a running [AsyncTask]
 class AsyncTaskChannel {
@@ -24,8 +26,7 @@ class AsyncTaskChannel {
   /// Constructs a task channel.
   ///
   /// - [messageHandler]: optional handler that will receive all messages.
-  AsyncTaskChannel({AsyncTaskChannelMessageHandler? messageHandler})
-      : _messageHandler = messageHandler;
+  AsyncTaskChannel({this._messageHandler});
 
   late final AsyncTask _task;
 
@@ -80,7 +81,7 @@ class AsyncTaskChannel {
   /// Returns `true` if the message queue is NOT empty.
   bool get messageQueueIsNotEmpty => !messageQueueIsEmpty;
 
-  void _notifyMessage(message, bool fromExecutingContext) {
+  void _notifyMessage(dynamic message, bool fromExecutingContext) {
     var messageHandler = _messageHandler;
     if (messageHandler != null) {
       try {
@@ -163,13 +164,15 @@ abstract class AsyncTaskChannelPort {
 
   final QueueList<dynamic> _messageQueue = QueueList<dynamic>(32);
 
-  final QueueList<dynamic> _messageQueueExecutingContext =
-      QueueList<dynamic>(32);
+  final QueueList<dynamic> _messageQueueExecutingContext = QueueList<dynamic>(
+    32,
+  );
 
   final QueueList<Completer> _readQueue = QueueList<Completer>(32);
 
-  final QueueList<Completer> _readQueueExecutingContext =
-      QueueList<Completer>(32);
+  final QueueList<Completer> _readQueueExecutingContext = QueueList<Completer>(
+    32,
+  );
 
   /// Reads a message.
   ///

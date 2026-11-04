@@ -670,7 +670,13 @@ class AsyncExecutor {
     _tasksToExecuteQueue = null;
 
     for (var t in tasksToExecuteQueue) {
-      t.execute(this);
+      try {
+        t.execute(this);
+      } catch (e, s) {
+        // The caller of `execute` already has the task `Future`
+        // (and the other queued tasks must still be executed):
+        t.fail(e, s);
+      }
     }
   }
 
@@ -819,6 +825,13 @@ class _TaskToExecute<P, R> {
 
   void execute(AsyncExecutor executor) =>
       executor.execute(task, sharedDataInfo: sharedDataInfo);
+
+  /// Finishes [task] with [error] (if not finished yet).
+  void fail(Object error, StackTrace stackTrace) {
+    if (!task.isFinished) {
+      task._finishError(error, stackTrace);
+    }
+  }
 }
 
 /// An [AsyncExecutorThread] info.

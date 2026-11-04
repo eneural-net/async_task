@@ -1,3 +1,46 @@
+## 1.2.0
+
+- `lib/src/async_task_isolate.dart`:
+  - `AsyncExecutor.execute` while closing, once `close` is no longer waiting for executing tasks
+    (the `Isolate`s are being closed), now throws an `AsyncExecutorClosedError`, as after `close`.
+    Previously, with no `Isolate` spawned yet, it failed with an `IntegerDivisionByZeroException`,
+    and otherwise the task was submitted to a closing `Isolate` (never completing).
+    A task executed while `close` waits for the executing tasks is still accepted (and waited for).
+  - `AsyncExecutor.close` also waits for the tasks executed while it was waiting for the executing tasks.
+  - A task that can't be sent to the `Isolate` (parameters that can't be sent between isolates,
+    or a `SharedData` serialization error) now completes with an `AsyncExecutorError`
+    (`AsyncTask submit error`). Previously it never completed and `AsyncExecutor.close` never returned.
+  - A task with a throwing `parameters()` (or `sharedData()`) no longer prevents `AsyncExecutor.close`
+    from returning, and releases its channel port.
+
+- `lib/src/async_task_base.dart`:
+  - `AsyncExecutor`: a task executed before the executor is started, failing to be submitted,
+    now completes its `Future` with the error (was an unhandled error).
+  - `_Isolate`: releases the task channel port of a task failing before its execution
+    (for example, `instantiate` throwing in the `Isolate`), and the port of a task without a channel
+    in the `Isolate` (`channelInstantiator` returning `null`) but with a channel in the main side.
+  - A task that fails in an `Isolate` now has its `initTime` and `endTime` (as with the generic executor).
+    They're still `null` if the task failed before its execution (resolving its `SharedData` or
+    instantiating it in the `Isolate`).
+
+- `lib/src/async_task_shared_data.dart`:
+  - `SerializableData.copyGeneric`: `List`, `Set` and `Iterable` copies keep the element type
+    (were copied with `dynamic` elements, failing the cast to a typed collection, like a `List<Object>`).
+  - `SerializableData.copyGeneric`: `Map` and `MapEntry` copies keep the key/value types when they are
+    basic types (`String`, `int`, `double`, `num`, `bool`, also nullable), `Object` or `Object?`/`dynamic`.
+    For other types (like `Map<String, List<int>>`) a `StateError` is thrown if the copy
+    (with the closest supported types) is not of the requested type.
+    A `MapEntry` with immutable key and value is returned as is.
+  - `SerializableData.copyGeneric`: supports `null` (also as a collection element).
+
+- Tests:
+  - `async_task_isolate_integration_test.dart`: `execute` while closing (with and without `Isolate`s),
+    channel port leak of tasks failing to instantiate (via `vm_service`), execution times of failed tasks,
+    tasks with parameters that can't be sent to the `Isolate` or with throwing `parameters()`.
+  - `async_task_stress_test.dart`: failed tasks in an `Isolate` have execution times
+    (the file was also re-formatted by `dart format`).
+  - `async_task_shared_data_test.dart`: typed collections copies.
+
 ## 1.1.5
 
 - async_extension: ^1.2.24

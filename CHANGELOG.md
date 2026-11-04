@@ -1,3 +1,29 @@
+## 1.1.4
+
+- `lib/src/async_task_isolate.dart`:
+  - `_Isolate`: an error while resolving a task's `SharedData` in the `Isolate`
+    (`loadSharedData` throwing or returning `null`, or a task type not registered)
+    now completes the task with an `AsyncExecutorError`.
+    Previously the error was unhandled in the `Isolate` port handler, killing the `Isolate`:
+    the task never completed and `AsyncExecutor.close` never returned.
+  - `_Isolate`: a failed request of a missing `SharedData` (to the main side) no longer
+    leaves a stale pending request: the next task requests it again.
+  - `_Isolate`: the task channel port is sent to the main side only after the task channel is initialized.
+    When the task execution was delayed by a `SharedData` request to the main side,
+    channel messages sent by the main side in the meantime were lost (the task waited forever).
+  - `_Isolate`: releases the task channel port of a task that failed resolving its `SharedData`.
+
+- Tests:
+  - New `async_task_stress_test.dart` (VM and Web): hundreds of tasks with `parallelism` 0/1/4,
+    sequential and not, mixed sync/async/throwing tasks, results order and identity,
+    `close` while tasks are queued or running, `execute` while closing,
+    `SharedData` reuse and dispose across many tasks and bidirectional channel messages under load.
+  - New `async_task_isolate_integration_test.dart` (VM): `SharedData` load failures and
+    the request of a missing `SharedData` from the main side, dispose between queued tasks,
+    concurrent tasks with new `SharedData` and `Isolate` termination on close (via `vm_service`).
+  - `async_task_counter_test.dart`: replaced the wall-clock assertions (execution and total time thresholds)
+    with assertions on the ordering of the execution intervals (concurrent vs. sequential execution).
+
 ## 1.1.3
 
 - `lib/src/async_task_base.dart`:

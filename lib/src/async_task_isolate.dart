@@ -864,10 +864,13 @@ class _Isolate {
 
           var taskChannelSendPort = message.taskChannelSendPort;
 
+          // The `sendPort` of `taskChannelReceivePort` is sent to the main side
+          // only after the task channel is initialized (see `_processTaskExecute`):
+          // the task execution can be delayed by a `SharedData` request, and
+          // messages received before the channel initialization would be lost.
           _ReceivePort? taskChannelReceivePort;
           if (taskChannelSendPort != null) {
             taskChannelReceivePort = _receivePortPool.catchPort();
-            taskChannelSendPort.send(taskChannelReceivePort.sendPort);
           }
 
           _processTask(
@@ -897,6 +900,14 @@ class _Isolate {
 
   final Map<String, SharedData> _sharedDatas = <String, SharedData>{};
 
+  /// Releases the task channel port of a task that failed before its
+  /// channel was initialized (the channel would release it on close).
+  void _releaseTaskChannelPort(_ReceivePort? taskChannelReceivePort) {
+    if (taskChannelReceivePort != null) {
+      _receivePortPool.releasePort(taskChannelReceivePort);
+    }
+  }
+
   void _processTask(
     int thID,
     _IsolateMsgTask message,
@@ -908,28 +919,37 @@ class _Isolate {
       var sentAllSharedData = message.sentAllSharedData!;
       var sharedDataMap = message.sharedDataMap!;
 
-      if (sentAllSharedData) {
-        _processTaskWithPreSentSharedData(
-          thID,
-          message.taskType,
-          message.submitTime,
-          taskChannelReceivePort,
-          taskChannelSendPort,
-          message.parameters,
-          sharedDataMap,
-          replyPort,
-        );
-      } else {
-        _processTaskWithSharedDataToResolve(
-          thID,
-          message.taskType,
-          message.submitTime,
-          taskChannelReceivePort,
-          taskChannelSendPort,
-          message.parameters,
-          sharedDataMap,
-          replyPort,
-        );
+      // Errors resolving the `SharedData` (not registered task type,
+      // `loadSharedData` throwing or returning `null`) must be replied as a
+      // task error: an exception thrown in this port handler would kill the
+      // `Isolate` and the task would never complete.
+      try {
+        if (sentAllSharedData) {
+          _processTaskWithPreSentSharedData(
+            thID,
+            message.taskType,
+            message.submitTime,
+            taskChannelReceivePort,
+            taskChannelSendPort,
+            message.parameters,
+            sharedDataMap,
+            replyPort,
+          );
+        } else {
+          _processTaskWithSharedDataToResolve(
+            thID,
+            message.taskType,
+            message.submitTime,
+            taskChannelReceivePort,
+            taskChannelSendPort,
+            message.parameters,
+            sharedDataMap,
+            replyPort,
+          );
+        }
+      } catch (e, s) {
+        _releaseTaskChannelPort(taskChannelReceivePort);
+        _processTaskReplyError(null, e, s, replyPort);
       }
     } else {
       _processTaskExecute(
@@ -1076,12 +1096,19 @@ class _Isolate {
     Map<String, Object> sharedDataMap,
     SendPort replyPort,
   ) async {
-    var ret = await _resolveSharedDataMap(
-      thID,
-      taskType,
-      sharedDataMap,
-      replyPort,
-    );
+    MapEntry<Map<String, SharedData>, SendPort> ret;
+    try {
+      ret = await _resolveSharedDataMap(
+        thID,
+        taskType,
+        sharedDataMap,
+        replyPort,
+      );
+    } catch (e, s) {
+      _releaseTaskChannelPort(taskChannelReceivePort);
+      _processTaskReplyError(null, e, s, replyPort);
+      return;
+    }
 
     var sharedDataMapResolved = ret.key;
     replyPort = ret.value;
@@ -1131,6 +1158,11 @@ class _Isolate {
           ),
         ),
       );
+
+      // Channel initialized: now the main side can send messages to it.
+      if (taskChannelSendPort != null) {
+        taskChannelSendPort.send(taskChannelReceivePort!.sendPort);
+      }
 
       task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
         if (error != null) {
@@ -1312,6 +1344,11 @@ class _Isolate {
 
       return MapEntry(resolvedSharedData, replyPort);
     } catch (e, s) {
+      // Allow a new request for this `SharedData` in a later task:
+      _requestingSharedDatas.remove(sharedDataSign);
+      // Concurrent waiters (if any) still receive the error, but without
+      // them it shouldn't be reported as unhandled (would kill the `Isolate`):
+      requesting.future.ignore();
       requesting.completeError(e, s);
       rethrow;
     }

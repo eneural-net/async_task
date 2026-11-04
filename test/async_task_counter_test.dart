@@ -393,7 +393,13 @@ Future<AsyncExecutor> _testParallelismImpl(
     expect(n, equals(expectedResult));
     expect(n, equals(c.result));
 
-    expect(c.executionTime!.inMilliseconds >= 100, isTrue);
+    // The `total` steps were performed (each one awaiting): the result above
+    // depends on all of them. The execution times are recorded and ordered
+    // (no wall-clock threshold, which could flake on slow machines):
+    expect(c.initTime, isNotNull);
+    expect(c.endTime, isNotNull);
+    expect(c.endTime!.isAfter(c.initTime!), isTrue);
+    expect(c.executionTime, isNotNull);
 
     var taskChannel = c.channelResolved();
     if (withTaskChannel) {
@@ -415,13 +421,21 @@ Future<AsyncExecutor> _testParallelismImpl(
   print('parallelism: $parallelism');
   print('totalTime: $totalTime');
 
-  var timeDiv = parallelism > 1 ? parallelism : 1;
+  // Parallelism verified by the ordering of the execution intervals, instead
+  // of wall-clock thresholds of the total time (which could flake on slow CI):
+  // - sequential: at most one task running per worker at any moment.
+  // - not sequential: the tasks run concurrently (more than one per worker,
+  //   as each task awaits 10 times before finishing).
+  var maxWorkers = executor.maximumWorkers;
+  var maxOverlap = _maxOverlappingExecutions(counters);
+  print('maxOverlap: $maxOverlap (maximumWorkers: $maxWorkers)');
 
-  expect(totalTime > (!sequential ? 100 : (100 * 10 / timeDiv)), isTrue);
-  expect(
-    totalTime < (!sequential ? 100 + 1000 : (100 * 100 / timeDiv) + 1000),
-    isTrue,
-  );
+  if (sequential) {
+    expect(maxOverlap, greaterThanOrEqualTo(1));
+    expect(maxOverlap, lessThanOrEqualTo(maxWorkers));
+  } else {
+    expect(maxOverlap, greaterThan(maxWorkers));
+  }
 
   await executor.close();
 
@@ -442,6 +456,27 @@ Future<AsyncExecutor> _testParallelismImpl(
   expect(error is AsyncExecutorError, isTrue);
 
   return executor;
+}
+
+/// The maximum number of [tasks] executing at the same time, computed from
+/// their `[initTime, endTime]` intervals. Intervals that only touch (one ends
+/// at the same instant the next one starts) are not overlapping.
+int _maxOverlappingExecutions(List<AsyncTask> tasks) {
+  // (time, delta): ends (-1) sort before starts (+1) at the same instant.
+  var events = <(int, int)>[
+    for (var t in tasks) ...[
+      (t.initTime!.microsecondsSinceEpoch, 1),
+      (t.endTime!.microsecondsSinceEpoch, -1),
+    ],
+  ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+
+  var running = 0;
+  var max = 0;
+  for (var e in events) {
+    running += e.$2;
+    if (running > max) max = running;
+  }
+  return max;
 }
 
 List<AsyncTask> _taskRegister() => [

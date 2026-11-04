@@ -169,7 +169,7 @@ abstract class AsyncTask<P, R> {
         try {
           trigger(this, result, error, stackTrace);
         } catch (e, s) {
-          _executorThread?.logger.logError(error, s);
+          _executorThread?.logger.logError(e, s);
         }
       }
     }
@@ -1015,6 +1015,10 @@ class _AsyncExecutorSingleThread extends AsyncExecutorThread {
     AsyncExecutorSharedDataInfo? sharedDataInfo,
   }) {
     bindTask(task);
+
+    // Mark as submitted now (as the multi-thread executor does), so that a
+    // repeated `AsyncExecutor.execute` call won't execute the task twice:
+    task.submitTime ??= DateTime.now();
 
     task.resolveChannel(
       (t, c) => c.initialize(t, _AsyncTaskChannelPortLocal(c)),

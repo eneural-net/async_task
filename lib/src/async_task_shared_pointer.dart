@@ -619,5 +619,5 @@ class SharedPointerAddress
   }
 
   @override
-  List serialize() => [type, memoryAddress, parameters];
+  List serialize() => [memoryAddress, type, parameters];
 }

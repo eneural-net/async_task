@@ -295,10 +295,10 @@ extension ListDoubleExtension on List<double> {
   Float64x2List toFloat64x2List() {
     var length = this.length;
     var size = length ~/ 2;
-    if (size * 4 < length) ++size;
+    if (size * 2 < length) ++size;
 
     var list = List.generate(size, (i) {
-      var j = i * 4;
+      var j = i * 2;
       var x = this[j];
       var y = this[++j];
       return Float64x2(x, y);

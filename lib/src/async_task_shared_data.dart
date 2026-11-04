@@ -92,7 +92,7 @@ abstract class SerializableData<D, S> {
     } else if (data is Float64x2) {
       return data;
     } else if (data is MapEntry) {
-      return MapEntry(copyGeneric(data.key), copyGeneric(data.key)) as D;
+      return MapEntry(copyGeneric(data.key), copyGeneric(data.value)) as D;
     } else if (data is Uint8List) {
       return Uint8List.fromList(data) as D;
     } else if (data is Uint16List) {
@@ -102,13 +102,13 @@ abstract class SerializableData<D, S> {
     } else if (data is Int8List) {
       return Int8List.fromList(data) as D;
     } else if (data is Int16List) {
-      return Int8List.fromList(data) as D;
+      return Int16List.fromList(data) as D;
     } else if (data is Int32List) {
       return Int32List.fromList(data) as D;
     } else if (data is Float32List) {
       return Float32List.fromList(data) as D;
     } else if (data is Float64List) {
-      return Float32List.fromList(data) as D;
+      return Float64List.fromList(data) as D;
     } else if (data is Float32x4List) {
       return Float32x4List.fromList(data) as D;
     } else if (data is Int32x4List) {
@@ -153,7 +153,7 @@ abstract class SerializableData<D, S> {
     } else if (data is Float64x2) {
       return data as S;
     } else if (data is MapEntry) {
-      return MapEntry(serializeGeneric(data.key), serializeGeneric(data.key))
+      return MapEntry(serializeGeneric(data.key), serializeGeneric(data.value))
           as S;
     } else if (data is Uint8List) {
       return data.serialize() as S;
@@ -230,8 +230,14 @@ abstract class SerializableData<D, S> {
         t == _typeIterableString);
   }
 
+  static final _typeObjectNullable = _toType<Object?>();
+
   static D deserializeGeneric<D>(dynamic serial) {
-    if (D == int) {
+    if (D == dynamic || D == Object || D == _typeObjectNullable) {
+      // No static type to deserialize to (e.g. collection elements):
+      // keep the value as is.
+      return serial as D;
+    } else if (D == int) {
       return serial as D;
     } else if (D == double) {
       return serial as D;
@@ -249,7 +255,7 @@ abstract class SerializableData<D, S> {
       return serial as D;
     } else if (D == MapEntry) {
       var e = serial as MapEntry;
-      return MapEntry(deserializeGeneric(e.key), deserializeGeneric(e.key))
+      return MapEntry(deserializeGeneric(e.key), deserializeGeneric(e.value))
           as D;
     } else if (D == Uint8List) {
       return Uint8List.fromList(serial as List<int>) as D;

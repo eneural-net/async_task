@@ -1,3 +1,48 @@
+## 1.1.3
+
+- `lib/src/async_task_base.dart`:
+  - `_AsyncExecutorSingleThread.execute` (used with `parallelism: 0` and on the Web): marks the task as submitted immediately,
+    as the `Isolate` executor does, so a repeated `AsyncExecutor.execute` of the same task no longer executes it twice.
+  - `AsyncTask`: a throwing `OnFinishAsyncTask` trigger now logs its own error (was logging the task error).
+
+- `lib/src/async_task_shared_data.dart`:
+  - `SerializableData.copyGeneric`: fixed `Int16List` and `Float64List` copies (were creating an `Int8List`/`Float32List` and failing).
+  - `SerializableData.copyGeneric`, `serializeGeneric`, `deserializeGeneric`: `MapEntry` now keeps its `value` (the `key` was used for both).
+  - `SerializableData.deserializeGeneric`: `dynamic`/`Object` types return the value as is,
+    allowing the deserialization of untyped `List`, `Set`, `Iterable` and `MapEntry` elements.
+
+- `lib/src/async_task_extension.dart`:
+  - `ListDoubleExtension.toFloat64x2List`: fixed index computation (was failing for lists with more than 2 values).
+
+- `lib/src/async_task_shared_pointer.dart`:
+  - `SharedPointerAddress.serialize`: fixed the order of the serialized fields, matching `deserialize`.
+
+- `lib/src/async_task_channel.dart`:
+  - `AsyncTaskChannel` constructor: uses a private initializing formal (the named parameter is still `messageHandler`).
+
+- Removed library names (`library;`) and fixed dartdoc references.
+- `dart format` with the Dart 3.13 style.
+
+- Tests:
+  - New `async_task_executor_test.dart` (VM and Web), `async_task_isolate_test.dart` (VM) and `async_task_shared_data_test.dart`.
+  - Close all executors at the end of the tests.
+
+- `pubspec.yaml`:
+  - Updated SDK constraint to `^3.13.0`.
+  - Updated dependencies:
+    - `async_extension` to ^1.2.23
+    - `ffi` to ^2.2.0
+  - Updated dev_dependencies:
+    - `lints` to ^6.1.0
+    - `test` to ^1.33.0
+    - `dependency_validator` to ^5.1.0
+    - `coverage` to ^1.16.0
+    - `vm_service` to ^15.4.0
+
+- `.github/workflows/dart.yml`:
+  - `actions/checkout@v7`.
+  - `codecov/codecov-action@v7`.
+
 ## 1.1.2
 
 - `lib/src/async_task_isolate.dart`:

@@ -864,10 +864,13 @@ class _Isolate {
 
           var taskChannelSendPort = message.taskChannelSendPort;
 
+          // The `sendPort` of `taskChannelReceivePort` is sent to the main side
+          // only after the task channel is initialized (see `_processTaskExecute`):
+          // the task execution can be delayed by a `SharedData` request, and
+          // messages received before the channel initialization would be lost.
           _ReceivePort? taskChannelReceivePort;
           if (taskChannelSendPort != null) {
             taskChannelReceivePort = _receivePortPool.catchPort();
-            taskChannelSendPort.send(taskChannelReceivePort.sendPort);
           }
 
           _processTask(
@@ -896,6 +899,14 @@ class _Isolate {
   }
 
   final Map<String, SharedData> _sharedDatas = <String, SharedData>{};
+
+  /// Releases the task channel port of a task that failed before its
+  /// channel was initialized (the channel would release it on close).
+  void _releaseTaskChannelPort(_ReceivePort? taskChannelReceivePort) {
+    if (taskChannelReceivePort != null) {
+      _receivePortPool.releasePort(taskChannelReceivePort);
+    }
+  }
 
   void _processTask(
     int thID,
@@ -937,6 +948,7 @@ class _Isolate {
           );
         }
       } catch (e, s) {
+        _releaseTaskChannelPort(taskChannelReceivePort);
         _processTaskReplyError(null, e, s, replyPort);
       }
     } else {
@@ -1093,6 +1105,7 @@ class _Isolate {
         replyPort,
       );
     } catch (e, s) {
+      _releaseTaskChannelPort(taskChannelReceivePort);
       _processTaskReplyError(null, e, s, replyPort);
       return;
     }
@@ -1145,6 +1158,11 @@ class _Isolate {
           ),
         ),
       );
+
+      // Channel initialized: now the main side can send messages to it.
+      if (taskChannelSendPort != null) {
+        taskChannelSendPort.send(taskChannelReceivePort!.sendPort);
+      }
 
       task.addOnFinishAsyncTask((asyncTask, result, error, stackTrace) {
         if (error != null) {

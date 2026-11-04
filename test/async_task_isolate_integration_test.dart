@@ -219,6 +219,40 @@ void main() {
       expect(await f3, equals([24, 2]));
     });
 
+    test('a task with channel failing to load SharedData', () async {
+      var sd = SharedData<int, int>(3);
+
+      // Fails while loading the pre-sent `SharedData` (1st load)
+      // and while loading the requested one (2nd load):
+      for (var n in [1, 2]) {
+        await expectLater(
+          executor.execute(_ChannelLoadTask(n, {'fail2': sd})),
+          throwsA(isA<AsyncExecutorError>()),
+        );
+      }
+
+      // The channel ports of the failed tasks were released and are reused:
+      var tasks = [
+        for (var n = 0; n < 10; ++n) _ChannelLoadTask(n, {'fail2': sd}),
+      ];
+      var executions = executor.executeAll(tasks);
+
+      for (var t in tasks) {
+        var channel = (await t.channel())!;
+        expect(
+          await channel.sendAndWaitResponse<int, int>(10),
+          equals(10 * t.n),
+        );
+      }
+
+      expect(
+        await Future.wait(executions),
+        equals([
+          for (var n = 0; n < 10; ++n) [n * 3, 3],
+        ]),
+      );
+    });
+
     test('error with a cause that cannot be sent between isolates', () async {
       await expectLater(
         executor.execute(_UnsendableExecutorErrorTask()),
@@ -345,8 +379,9 @@ void main() {
           expect(stillAlive, isEmpty, reason: 'round $round');
         }
 
-        // No executor isolate left in this isolate group:
-        var leftovers = await _aliveIsolates(vmService, null);
+        // No executor isolate left in this isolate group (including the ones
+        // of the executors closed by the previous tests):
+        var leftovers = await _waitIsolatesTermination(vmService, null);
         expect(leftovers, isEmpty);
       } finally {
         await vmService.dispose();
@@ -390,11 +425,11 @@ Future<Set<String>> _aliveIsolates(
   throw StateError("Can't find the current isolate group");
 }
 
-/// Polls (up to a generous deadline) until the [names] isolates terminate.
-/// Returns the isolates still alive.
+/// Polls (up to a generous deadline) until the [names] isolates (or all the
+/// executor isolates, if `null`) terminate. Returns the isolates still alive.
 Future<Set<String>> _waitIsolatesTermination(
   vm_service.VmService vmService,
-  Set<String> names,
+  Set<String>? names,
 ) async {
   var deadline = DateTime.now().add(Duration(seconds: 30));
   var alive = await _aliveIsolates(vmService, names);
@@ -407,6 +442,7 @@ Future<Set<String>> _waitIsolatesTermination(
 
 List<AsyncTask> _taskTypeRegister() => <AsyncTask>[
   _LoadTask(0, {}),
+  _ChannelLoadTask(0, {}),
   _NullLoadTask(SharedData<int, int>(0)),
   _UnsendableExecutorErrorTask(),
   _LoadCountTask(),
@@ -454,6 +490,28 @@ class _LoadTask extends AsyncTask<int, List<int>> {
   FutureOr<List<int>> run() {
     var sum = sharedDatas.values.fold<int>(0, (s, e) => s + (e.data as int));
     return [n * sum, _loads];
+  }
+}
+
+/// A [_LoadTask] with a channel: replies `message * n` to one message.
+class _ChannelLoadTask extends _LoadTask {
+  _ChannelLoadTask(super.n, super.sharedDatas);
+
+  @override
+  AsyncTask<int, List<int>> instantiate(
+    int parameters, [
+    Map<String, SharedData>? sharedData,
+  ]) => _ChannelLoadTask(parameters, sharedData ?? {});
+
+  @override
+  AsyncTaskChannel? channelInstantiator() => AsyncTaskChannel();
+
+  @override
+  FutureOr<List<int>> run() async {
+    var channel = channelResolved()!;
+    var m = await channel.waitMessage<int>();
+    channel.send(m * n);
+    return super.run();
   }
 }
 

@@ -8,6 +8,10 @@
     the task never completed and `AsyncExecutor.close` never returned.
   - `_Isolate`: a failed request of a missing `SharedData` (to the main side) no longer
     leaves a stale pending request: the next task requests it again.
+  - `_Isolate`: the task channel port is sent to the main side only after the task channel is initialized.
+    When the task execution was delayed by a `SharedData` request to the main side,
+    channel messages sent by the main side in the meantime were lost (the task waited forever).
+  - `_Isolate`: releases the task channel port of a task that failed resolving its `SharedData`.
 
 - Tests:
   - New `async_task_stress_test.dart` (VM and Web): hundreds of tasks with `parallelism` 0/1/4,
